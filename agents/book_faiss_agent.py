@@ -1,5 +1,3 @@
-# agents/book_agent.py
-
 from langchain_core.prompts import PromptTemplate
 from utils.llm_config import get_chat_model
 from rag.retrieve_faiss import retrieve_context, load_vector_db
