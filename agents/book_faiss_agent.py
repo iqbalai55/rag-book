@@ -27,7 +27,7 @@ Answer:
 )
 
 
-class BookAgent:
+class BookFaissAgent:
     def __init__(self, faiss_path: str, k: int = 3):
         self.llm = get_chat_model()
         self.vectordb = load_vector_db(faiss_path)

@@ -17,3 +17,10 @@ InstructorEmbedding
 faiss-cpu
 pyperclip
 ipywidgets
+
+# qdrant specific
+qdrant-client
+langchain-qdrant
+docling
+docling-core
+fastembed

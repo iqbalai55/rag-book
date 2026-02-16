@@ -9,7 +9,6 @@ from qdrant_client.http.models import Distance, VectorParams
 logging.basicConfig(level=logging.INFO)
 
 pdf_path = r"book\Lean Software Development An Agile Toolkit (Mary Poppendieck  Tom Poppendieck) (Z-Library).pdf"  
-pdf_path2 = r"book\Louise Lewis - Fundamentals of Midwifery_ A Textbook for Students-Wiley-Blackwell (2015).pdf"
 
 embedding_model = HuggingFaceInstructEmbeddings(
     model_name="sentence-transformers/all-MiniLM-L6-v2",
@@ -20,14 +19,12 @@ qdrant_db = QdrantDB(collection_name="real_books", embedding_model=embedding_mod
 
 processor = DocumentProcessor()
 chunks = processor.process_document(pdf_path)
-chunks = processor.process_document(pdf_path2)
-
 
 qdrant_db.add_documents(chunks)
 
 agent = BookQdrantAgent(qdrant_db=qdrant_db, k=3)
 
-question = "What is midwife?"
+question = "Summarize lean principle for software development"
 result = agent.ask(question)
 
 print("Question:", question)
