@@ -22,11 +22,16 @@ chunks = processor.process_document(pdf_path)
 
 qdrant_db.add_documents(chunks)
 
-agent = BookQdrantAgent(qdrant_db=qdrant_db, k=3)
+agent = BookQdrantAgent(qdrant_db=qdrant_db, k=3).get_agent()
 
-question = "Summarize lean principle for software development"
-result = agent.ask(question)
+query = (
+    "What is fundamental principle in lean software development?\n\n"
+    "can you eleborate more in simple."
+)
 
-print("Question:", question)
-print("Answer:", result["answer"])
-print("Metadata:", result["metadata"])
+for event in agent.stream(
+    {"messages": [{"role": "user", "content": query}]},
+    {"configurable": {"thread_id": "1"}},
+    stream_mode="values",
+):
+    event["messages"][-1].pretty_print()
