@@ -1,63 +1,77 @@
-from langchain_core.prompts import PromptTemplate
 from utils.llm_config import get_chat_model
-from rag.retrieve_faiss import retrieve_context, load_vector_db
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langchain_core.documents import Document
+from langchain.agents.middleware import SummarizationMiddleware
+from langgraph.checkpoint.memory import InMemorySaver
+from langchain.agents.middleware import ToolCallLimitMiddleware
+from langchain_core.messages import SystemMessage
+from rag.faiss.retrieve_faiss import load_vector_db
+from typing import List, Tuple
 
-
-BOOK_QA_PROMPT = PromptTemplate(
-    template="""
-You are an expert assistant answering questions based ONLY on the provided book context.
+BOOK_QA_PROMPT = SystemMessage(content="""
+You are an expert assistant answering questions based ONLY on the provided book context retrieved using the search_book tool. 
 
 Rules:
 1. Do NOT make up answers.
 2. If the answer is not in the context, say: "I don't know based on the provided context."
-3. Answer in the same language as the question.
-4. Be concise and accurate.
+3. Always include the source and page numbers from the chunk metadata of the retrieved content. Use the 'source' field as the book title and the 'pages' field as the page numbers.
+4. Answer in the same language as the question.
+5. Be concise and accurate.
 
-Context:
-{context}
-
-Question:
-{question}
-
-Answer:
-""",
-    input_variables=["context", "question"],
-)
-
+Format example:
+Answer: <your answer here>
+Source: <source from metadata>, Pages <pages from metadata>
+""")
 
 class BookFaissAgent:
     def __init__(self, faiss_path: str, k: int = 3):
         self.llm = get_chat_model()
         self.vectordb = load_vector_db(faiss_path)
         self.k = k
+        self.checkpointer = InMemorySaver()
 
-        self.chain = BOOK_QA_PROMPT | self.llm
+        # Define tool as nested function to capture self via closure
+        @tool("search_book", description="Search relevant book", response_format="content_and_artifact")
+        def search_book(query: str):
+            retriever = self.vectordb.as_retriever(search_kwargs={"k": self.k})
+            docs: List[Document] = retriever.get_relevant_documents(query)  # standard FAISS retriever call
 
-    def ask(self, question: str) -> dict:
-        """
-        Perform RAG + LLM generation
-        """
-        try:
-            # 🔹 Retrieve context using rag.py
-            context, pages = retrieve_context(
-                self.vectordb,
-                question,
-                k=self.k
-            )
-            
-            #print(pages)
-            #print(context)
+            merged_context = ""
+            seen_texts = set()
 
-            # 🔹 Call LLM
-            response = self.chain.invoke({
-                "context": context,
-                "question": question
-            })
+            for doc in docs:
+                # Clean text
+                text = "\n".join([line.strip() for line in doc.page_content.splitlines() if line.strip()])
+                if text not in seen_texts:
+                    # Include metadata inline for LLM
+                    source = doc.metadata.get("source", "unknown")
+                    pages = doc.metadata.get("pages", [])
+                    pages_str = ", ".join(map(str, pages))
+                    merged_context += f"(Source: {source}, Pages: {pages_str})\nContent:\n{text}\n\n"
+                    
+                    seen_texts.add(text)
 
-            return {
-                "answer": response.content,
-                "pages": pages
-            }
+            return merged_context.strip(), docs
 
-        except Exception as e:
-            raise RuntimeError(f"BookAgent failed: {str(e)}") from e
+        self.agent = create_agent(
+            model=self.llm,
+            system_prompt=BOOK_QA_PROMPT,
+            checkpointer=self.checkpointer,
+            tools=[search_book],
+            middleware=[
+                SummarizationMiddleware(
+                    model=self.llm,  # Use self.llm instead of hardcoded string
+                    max_tokens_before_summary=2000,
+                    messages_to_keep=20,
+                    summary_prompt="Summarize previous context briefly.",
+                ),
+                ToolCallLimitMiddleware(
+                    tool_name="search",
+                    run_limit=3,
+                ),
+            ],
+        )
+
+    def get_agent(self):
+        return self.agent

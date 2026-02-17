@@ -1,32 +1,34 @@
+# agents/book_agent.py
+
 import logging
 from typing import Tuple, List
-from langchain_core.prompts import PromptTemplate
+from langchain.tools import tool
+
 from utils.llm_config import get_chat_model
 from langchain_core.documents import Document
+from langchain.agents import create_agent
+from langchain.agents.middleware import SummarizationMiddleware
+from langgraph.checkpoint.memory import InMemorySaver
+from langchain.agents.middleware import ToolCallLimitMiddleware
+from langchain_core.messages import HumanMessage, SystemMessage
 from rag.qdrant.qdrant_db import QdrantDB  
 
 logger = logging.getLogger(__name__)
 
-BOOK_QA_PROMPT = PromptTemplate(
-    template="""
-You are an expert assistant answering questions based ONLY on the provided book context and you use english.
+BOOK_QA_PROMPT = SystemMessage(content="""
+You are an expert assistant answering questions based ONLY on the provided book context retrieved using the search_book tool. 
 
 Rules:
 1. Do NOT make up answers.
 2. If the answer is not in the context, say: "I don't know based on the provided context."
-3. Answer in the same language as the question.
-4. Be concise and accurate.
+3. Always include the source and page numbers from the chunk metadata of the retrieved content. Use the 'source' field as the book title and the 'pages' field as the page numbers.
+4. Answer in the same language as the question.
+5. Be concise and accurate.
 
-Context:
-{context}
-
-Question:
-{question}
-
-Answer:
-""",
-    input_variables=["context", "question"],
-)
+Format example:
+Answer: <your answer here>
+Source: <source from metadata>, Pages <pages from metadata>
+""")
 
 
 class BookQdrantAgent:
@@ -41,49 +43,58 @@ class BookQdrantAgent:
         self.llm = get_chat_model()
         self.qdrant_db = qdrant_db
         self.k = k
-        self.chain = BOOK_QA_PROMPT | self.llm
-
-    def retrieve_context(self, question: str) -> Tuple[str, List[dict]]:
-        """Retrieve top-k chunks from QdrantDB and combine into context string."""
         
-        results: List[Document] = self.qdrant_db.query(question, k=self.k)
+        self.checkpointer = InMemorySaver()
 
-        context_texts = []
-        all_metadata = []
+        # Define tool as nested function to capture self via closure
+        @tool("search_book", description="Search relevant book", response_format="content_and_artifact")
+        def search_book(question: str) -> Tuple[str, List[dict]]:
+            """Retrieve top-k chunks from QdrantDB and combine into context string with metadata for citations."""
+            
+            # Retrieve documents from vector DB
+            retrieved_docs: List[Document] = self.qdrant_db.query(question, k=self.k)
 
-        for doc in results:
-            context_texts.append(doc.page_content)
-            all_metadata.append(doc.metadata)  # ambil seluruh metadata
+            merged_context = ""
+            all_metadata = []
 
-        combined_context = "\n\n".join(context_texts)
+            seen_texts = set()
+            for doc in retrieved_docs:
+                text = "\n".join([line.strip() for line in doc.page_content.splitlines() if line.strip()])
+                if text not in seen_texts:
+                    # Include metadata inline for LLM (source and pages)
+                    source = doc.metadata.get("source", "unknown")
+                    pages = doc.metadata.get("pages", [])
+                    pages_str = ", ".join(map(str, pages))
+                    merged_context += f"(Source: {source}, Pages: {pages_str})\nContent:\n{text}\n\n"
 
-        print("Retrieved metadata:", all_metadata)
-        print("Combined context:", combined_context)
+                    seen_texts.add(text)
+                
+                # Keep metadata for structured output
+                all_metadata.append(doc.metadata)
 
-        return combined_context, all_metadata
+            logger.debug("Retrieved metadata: %s", all_metadata)
+            logger.debug("Merged context for LLM:\n%s", merged_context)
 
+            return merged_context.strip(), retrieved_docs
+        
+        self.agent = create_agent(
+            model=self.llm,
+            system_prompt=BOOK_QA_PROMPT,
+            checkpointer=self.checkpointer,
+            tools=[search_book], 
+            middleware=[
+                SummarizationMiddleware(
+                    model=self.llm, 
+                    max_tokens_before_summary=2000,
+                    messages_to_keep=20,
+                    summary_prompt="Summarize previous context briefly.",
+                ),
+                ToolCallLimitMiddleware(
+                    tool_name="search",
+                    run_limit=3,
+                ),
+            ],
+        )
 
-    def ask(self, question: str) -> dict:
-        """Perform RAG + LLM QA using QdrantDB."""
-        try:
-            context, metadata = self.retrieve_context(question)
-
-            if not context.strip():
-                return {
-                    "answer": "I don't know based on the provided context.",
-                    "metadata": []
-                }
-
-            response = self.chain.invoke({
-                "context": context,
-                "question": question
-            })
-
-            return {
-                "answer": response.content,
-                "metadata": metadata
-            }
-
-        except Exception as e:
-            raise RuntimeError(f"BookQdrantAgent failed: {str(e)}") from e
-
+    def get_agent(self):
+        return self.agent
