@@ -1,10 +1,12 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import logging
 from langchain_community.embeddings import HuggingFaceInstructEmbeddings
 from agents.book_qdrant_agent import BookQdrantAgent
 from rag.qdrant.qdrant_db import QdrantDB  
 from rag.qdrant.document_processor import DocumentProcessor 
-from qdrant_client import QdrantClient
-from qdrant_client.http.models import Distance, VectorParams
 
 logging.basicConfig(level=logging.INFO)
 
@@ -22,16 +24,11 @@ chunks = processor.process_document(pdf_path)
 
 qdrant_db.add_documents(chunks)
 
-agent = BookQdrantAgent(qdrant_db=qdrant_db, k=3).get_agent()
+agent = BookQdrantAgent(qdrant_db=qdrant_db, k=3)
 
 query = (
     "What is fundamental principle in lean software development?\n\n"
-    "can you eleborate more in simple term."
+    "can you eleborate more in simple."
 )
 
-for event in agent.stream(
-    {"messages": [{"role": "user", "content": query}]},
-    {"configurable": {"thread_id": "1"}},
-    stream_mode="values",
-):
-    event["messages"][-1].pretty_print()
+agent.ask(query=query)

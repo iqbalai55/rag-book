@@ -13,6 +13,8 @@ from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain_core.messages import HumanMessage, SystemMessage
 from rag.qdrant.qdrant_db import QdrantDB  
 
+from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler
+
 logger = logging.getLogger(__name__)
 
 BOOK_QA_PROMPT = SystemMessage(content="""
@@ -95,6 +97,18 @@ class BookQdrantAgent:
                 ),
             ],
         )
+    
+    def ask(self, query: str):
+        for event in self.agent.stream(
+            {"messages": [{"role": "user", "content": query}]},
+            config={
+                "configurable": {"thread_id": "1"},
+                "callbacks": [LangfuseCallbackHandler()]
+            },
+            stream_mode="values",
+        ):
+            event["messages"][-1].pretty_print()
+                
 
     def get_agent(self):
         return self.agent

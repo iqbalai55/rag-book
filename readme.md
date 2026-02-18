@@ -10,6 +10,12 @@ Currently, we have implemented **two approaches**:
 
 Both approaches allow retrieval from a book vector database and generation of answers using a language model.
 
+# Feature 
+
+- Vector database (Qdrant and FAISS)
+- Tracing LLM response with langfuse 
+- Evaluator to evaluate the result (on-going)
+ 
 
 
 ## Installation

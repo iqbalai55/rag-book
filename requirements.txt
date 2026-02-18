@@ -27,3 +27,6 @@ fastembed
 
 # evaluator
 openevals
+
+#tracing
+langfuse 
