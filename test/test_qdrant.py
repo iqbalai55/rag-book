@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import logging
 from langchain_community.embeddings import HuggingFaceInstructEmbeddings
 from agents.book_qdrant_agent import BookQdrantAgent

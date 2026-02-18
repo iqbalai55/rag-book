@@ -24,3 +24,6 @@ langchain-qdrant
 docling
 docling-core
 fastembed
+
+# evaluator
+openevals
