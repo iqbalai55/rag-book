@@ -53,3 +53,7 @@ faiss_index_hp/
 
 # Copyright Book
 book/
+
+# mlflow
+mlflow.db 
+mlruns/

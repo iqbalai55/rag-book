@@ -9,9 +9,6 @@ from langchain_core.messages import SystemMessage
 from rag.faiss.retrieve_faiss import load_vector_db
 from typing import List, Tuple
 
-from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler
-
-
 BOOK_QA_PROMPT = SystemMessage(content="""
 You are an expert assistant answering questions based ONLY on the provided book context retrieved using the search_book tool. 
 
@@ -23,7 +20,7 @@ Rules:
 5. Be concise and accurate.
 
 Format example:
-Answer: <your answer here>
+<your answer here>
 Source: <source from metadata>, Pages <pages from metadata>
 """)
 
@@ -81,7 +78,6 @@ class BookFaissAgent:
             {"messages": [{"role": "user", "content": query}]},
             config={
                 "configurable": {"thread_id": "1"},
-                "callbacks": [LangfuseCallbackHandler()]
             },
             stream_mode="values",
         ):

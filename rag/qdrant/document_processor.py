@@ -2,7 +2,6 @@ import logging
 from typing import List, Dict
 from docling.document_converter import DocumentConverter
 from docling.chunking import HybridChunker
-from rag.qdrant.config import Config
 import os
 
 logger = logging.getLogger(__name__)
@@ -10,10 +9,13 @@ logger = logging.getLogger(__name__)
 class DocumentProcessor:
     """Handles document loading, chunking, and metadata extraction."""
     
-    def __init__(self):
+    def __init__(self, chunker, tokenizer, max_tokens=256):
         """Initialize the document processor."""
-        self.chunker = HybridChunker(tokenizer=Config.CHUNK_TOKENIZER)
-        logger.info(f"Initialized DocumentProcessor with tokenizer: {Config.CHUNK_TOKENIZER}")
+        
+        self.max_tokens = max_tokens
+        
+        self.chunker = chunker if chunker is not None else HybridChunker(tokenizer=tokenizer)
+        logger.info(f"Initialized DocumentProcessor with tokenizer: {tokenizer}")
     
     def load_document(self, file_path: str):
         """Load and convert a document using Docling."""
@@ -39,9 +41,9 @@ class DocumentProcessor:
             List[Dict]: Each dict has 'text' and 'metadata' (with keys 'pages' and 'source')
         """
         try:
-            logger.info(f"Chunking document with max_tokens: {Config.MAX_TOKENS}")
+            logger.info(f"Chunking document with max_tokens: {self.max_tokens}")
             
-            chunks = self.chunker.chunk(dl_doc=document, max_tokens=Config.MAX_TOKENS)
+            chunks = self.chunker.chunk(dl_doc=document, max_tokens=self.max_tokens)
             chunked_with_metadata = []
             filename = os.path.basename(file_path)  # extract filename from path
 
