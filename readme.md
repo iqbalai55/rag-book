@@ -13,10 +13,11 @@ Both approaches allow retrieval from a book vector database and generation of an
 # Feature 
 
 - Vector database (Qdrant and FAISS)
-- Tracing LLM response with langfuse 
+- Tracing LLM response with MLflow 
 - Evaluator to evaluate the result (on-going)
- 
-
+- Benchmarking with Mflow:
+    - Embedding
+    - LLM model (on going)
 
 ## Installation
 
@@ -52,16 +53,6 @@ Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
-
-### 3️⃣ Configure API Keys
-
-Create a `.env` file in the project root:
-
-```
-OPENAI_API_KEY=your_key_here
-OPENAI_MODEL=your_selected_model
-```
-
 
 ## Usage
 

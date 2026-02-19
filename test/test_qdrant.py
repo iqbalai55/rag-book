@@ -13,7 +13,6 @@ from agents.book_qdrant_agent import BookQdrantAgent
 from rag.qdrant.qdrant_db import QdrantDB  
 from rag.qdrant.document_processor import DocumentProcessor 
 
-
 logging.basicConfig(level=logging.INFO)
 
 mlflow.set_experiment("Test qdrant agent")
