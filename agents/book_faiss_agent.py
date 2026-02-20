@@ -7,7 +7,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain_core.messages import SystemMessage
 from rag.faiss.retrieve_faiss import load_vector_db
-from typing import List, Tuple
+from typing import List, AsyncGenerator
+import json
 
 BOOK_QA_PROMPT = SystemMessage(content="""
 You are an expert assistant answering questions based ONLY on the provided book context retrieved using the search_book tool. 
@@ -82,6 +83,29 @@ class BookFaissAgent:
             stream_mode="values",
         ):
             event["messages"][-1].pretty_print()
+    
+    async def ask_stream(self, query: str, session_id: str = "book_thread") -> AsyncGenerator[str, None]:
+        """SSE generator for streaming"""
+        config = {"configurable": {"thread_id": session_id}}
+        
+        async for event in self.agent.astream(
+            {"messages": [("user", query)]},
+            config=config,
+            stream_mode="values",  # Streams full state; use "updates" for deltas
+        ):
+            # Grab the latest message content (your agent state has "messages")
+            if event["messages"]:
+                last_msg = event["messages"][-1]
+                content = getattr(last_msg, "content", "") or ""
+                if content:
+                    chunk = {
+                        "id": "chatcmpl",
+                        "object": "chat.completion.chunk",
+                        "choices": [{"delta": {"content": content}, "finish_reason": None}]
+                    }
+                    yield f"data: {json.dumps(chunk)}\n\n"
+        
+        yield "data: [DONE]\n\n"
 
     def get_agent(self):
         return self.agent

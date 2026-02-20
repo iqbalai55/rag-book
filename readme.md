@@ -17,7 +17,9 @@ Both approaches allow retrieval from a book vector database and generation of an
 - Evaluator to evaluate the result (on-going)
 - Benchmarking with Mflow:
     - Embedding
-    - LLM model (on going)
+    - LLM model (on-going)
+- Fast API support for deployment
+- Modal.com support for deployment (on-going)
 
 ## Installation
 
@@ -56,11 +58,25 @@ pip install -r requirements.txt
 
 ## Usage
 
-Once installed and configured, you can start querying your book database through the RAG agent. Both Qdrant and FAISS approaches provide similar interfaces for:
+### Ingest Book
 
-* Searching book content
-* Returning context with **source and page citations**
-* Handling conversation history with summarization
-* Limiting excessive tool calls for safe usage
+Ingest book to Qdrant db, to do that modify and use:
 
+```bash
+python ingest_book.py
+```
+
+### Fast API deployment
+
+Deploy using fast api:
+
+```bash
+uvicorn main_fastapi:app --reload
+```
+
+Example curl 
+
+```bash
+curl -N http://localhost:8000/book-qa/stream -H "Content-Type: application/json" -d "{\"messages\":[{\"role\":\"user\",\"content\":\"What is fundamental principle of lean developent on software engineering?\"}],\"session_id\":\"session_1\"}"
+```
 

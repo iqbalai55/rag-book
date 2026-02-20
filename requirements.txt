@@ -28,6 +28,9 @@ fastembed
 # evaluator
 openevals
 
-#tracing
-#langfuse
+# observalbility and evaluate
 mlflow
+
+# fast api
+fastapi
+uvicorn 
