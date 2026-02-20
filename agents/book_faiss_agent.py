@@ -26,11 +26,11 @@ Source: <source from metadata>, Pages <pages from metadata>
 """)
 
 class BookFaissAgent:
-    def __init__(self, faiss_path: str, k: int = 3):
+    def __init__(self, faiss_path: str, checkpointer = None, k: int = 3):
         self.llm = get_chat_model()
         self.vectordb = load_vector_db(faiss_path)
         self.k = k
-        self.checkpointer = InMemorySaver()
+        self.checkpointer = checkpointer if checkpointer is not None else InMemorySaver()
 
         # Define tool as nested function to capture self via closure
         @tool("search_book", description="Search relevant book", response_format="content_and_artifact")

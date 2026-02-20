@@ -12,6 +12,7 @@ Both approaches allow retrieval from a book vector database and generation of an
 
 # Feature 
 
+- Save thread/conversation to Supabase/PostgresSQL
 - Vector database (Qdrant and FAISS)
 - Tracing LLM response with MLflow 
 - Evaluator to evaluate the result (on-going)
@@ -20,6 +21,14 @@ Both approaches allow retrieval from a book vector database and generation of an
     - LLM model (on-going)
 - Fast API support for deployment
 - Modal.com support for deployment (on-going)
+
+# TechStack
+
+- Supabase to store Agent state
+- Langchain to create Agent
+- Qdrant and Faiss to store vectorize book data
+- MLFlow for observability and benchmarking
+- Fast API dan Modal.com for deployment
 
 ## Installation
 

@@ -34,3 +34,7 @@ mlflow
 # fast api
 fastapi
 uvicorn 
+
+# Checkpointer progrestsql
+psycopg[binary]
+langgraph-checkpoint-postgres 

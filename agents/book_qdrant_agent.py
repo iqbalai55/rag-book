@@ -35,12 +35,12 @@ Source: <source from metadata>, Pages <pages from metadata>
 class BookQdrantAgent:
     """Book Agent that uses QdrantDB for RAG retrieval."""
 
-    def __init__(self, qdrant_db: QdrantDB, k: int = 3):
+    def __init__(self, qdrant_db: QdrantDB, checkpointer = None, k: int = 3):
         self.llm = get_chat_model()
         self.qdrant_db = qdrant_db
         self.k = k
         
-        self.checkpointer = InMemorySaver()
+        self.checkpointer = checkpointer if checkpointer is not None else InMemorySaver()
 
         @tool("search_book", description="Search relevant book", response_format="content_and_artifact")
         def search_book(question: str) -> Tuple[str, List[dict]]:
@@ -96,7 +96,7 @@ class BookQdrantAgent:
         
         config = {
                 "configurable": {"thread_id": "1"},
-            },
+            }
         
         for event in self.agent.stream(
             {"messages": [{"role": "user", "content": query}]},
