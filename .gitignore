@@ -60,3 +60,5 @@ mlruns/
 
 #qdrant 
 qdrant_storage
+
+uploads/
