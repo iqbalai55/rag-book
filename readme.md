@@ -22,7 +22,7 @@ Both approaches allow retrieval from a book vector database and generation of an
 - Fast API support for deployment
 - Modal.com support for deployment (on-going)
 
-# TechStack
+# Tech Stack
 
 - Supabase to store Agent state
 - Langchain to create Agent
@@ -83,9 +83,17 @@ Deploy using fast api:
 uvicorn main_fastapi:app --reload
 ```
 
-Example curl 
+Example curl:
+
+Chat with agent: 
 
 ```bash
 curl -N http://localhost:8000/book-qa/stream -H "Content-Type: application/json" -d "{\"messages\":[{\"role\":\"user\",\"content\":\"What is fundamental principle of lean developent on software engineering?\"}],\"session_id\":\"session_1\"}"
+```
+
+Ingest book via API:
+
+```bash
+curl -X POST "http://localhost:8000/book-qa/ingest" -F "file=@\"poa.pdf\""
 ```
 
