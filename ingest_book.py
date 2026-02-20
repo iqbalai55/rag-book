@@ -46,12 +46,12 @@ def ingest_book(pdf_path: str,
     logger.info("✅ Book indexed successfully!")
 
     # Optional test retrieval
-    test_query = "What is on page 42?"
-    retrieved = qdrant_db.query(test_query, k=3)
-    logger.info("🧪 Sample retrieval:")
-    for i, doc in enumerate(retrieved):
-        pages = doc.metadata.get("pages", [])
-        logger.info(f"  Chunk {i+1}: Pages {pages}")
+    #test_query = "What is on page 42?"
+    #retrieved = qdrant_db.query(test_query, k=3)
+    #logger.info("🧪 Sample retrieval:")
+    #for i, doc in enumerate(retrieved):
+    #    pages = doc.metadata.get("pages", [])
+    #    logger.info(f"  Chunk {i+1}: Pages {pages}")
 
     return qdrant_db
 
