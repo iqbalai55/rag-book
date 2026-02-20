@@ -11,7 +11,7 @@ from rag.qdrant.qdrant_db import QdrantDB
 from schemas.chat import ChatPayload
 from ingest_book import ingest_book  
 
-from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver  
 from qdrant_client import QdrantClient
 
 import mlflow
@@ -39,32 +39,29 @@ embedding_cache_volume = modal.SharedVolume().persist("hf_embedding_cache")
 )
 @asynccontextmanager
 async def lifespan():
-    global agent_instance, _checkpointer_ctx, qdrant_client
+    global agent_instance, qdrant_client
 
-    # Postgres checkpointer
-    _checkpointer_ctx = PostgresSaver.from_conn_string(SUPABASE_DB_URL)
-    checkpointer = _checkpointer_ctx.__enter__()
-    checkpointer.setup()
+    # Postgres async checkpointer
+    async with AsyncPostgresSaver.from_conn_string(SUPABASE_DB_URL) as checkpointer:
+        await checkpointer.setup()  # ⚡ async-safe
 
-    # Persistent Qdrant client
-    qdrant_client = QdrantClient(path=QDRANT_PATH)
-    qdrant_db = QdrantDB(
-        collection_name="real_books",
-        client=qdrant_client
-    )
+        # Persistent Qdrant client
+        qdrant_client = QdrantClient(path=QDRANT_PATH)
+        qdrant_db = QdrantDB(
+            collection_name="real_books",
+            client=qdrant_client
+        )
 
-    # Agent instance
-    agent_instance = BookQdrantAgent(qdrant_db=qdrant_db, checkpointer=checkpointer)
+        # Agent instance
+        agent_instance = BookQdrantAgent(qdrant_db=qdrant_db, checkpointer=checkpointer)
 
-    # MLflow autolog
-    mlflow.set_tracking_uri(f"file:{MLFLOW_PATH}")
-    mlflow.set_experiment("book_qa_streaming")
-    mlflow.langchain.autolog()
+        # MLflow autolog
+        os.makedirs(MLFLOW_PATH, exist_ok=True)
+        mlflow.set_tracking_uri(f"file:{MLFLOW_PATH}")
+        mlflow.set_experiment("book_qa_streaming")
+        mlflow.langchain.autolog()
 
-    yield
-
-    # Cleanup
-    _checkpointer_ctx.__exit__(None, None, None)
+        yield  # FastAPI siap jalan
 
 # ---------------- FASTAPI ----------------
 @stub.function()
@@ -85,21 +82,15 @@ def create_app():
     # ---------------- Ingest Book API ----------------
     @app.post("/book-qa/ingest")
     async def ingest_pdf(file: UploadFile = File(...)):
-        """
-        Upload a PDF and ingest it into Qdrant using the existing client
-        """
         try:
-            # Save uploaded PDF to temporary path
             tmp_path = f"/tmp/{file.filename}"
             with open(tmp_path, "wb") as f:
                 f.write(await file.read())
 
-            # Call ingest_book with the existing Qdrant client
+            # Ingest ke Qdrant
             ingest_book(pdf_path=tmp_path, client=qdrant_client)
 
-            # Cleanup temp file
             os.remove(tmp_path)
-
             return JSONResponse({"status": "success", "message": f"{file.filename} ingested"})
         except Exception as e:
             return JSONResponse({"status": "error", "message": str(e)}, status_code=500)

@@ -80,8 +80,10 @@ python ingest_book.py
 Deploy using fast api:
 
 ```bash
-uvicorn main_fastapi:app --reload
+python main_fastapi.py
 ```
+
+note: there issue when use ProactorEventLoop in windows with AsyncPostgresSaver because psycopg, so i force async loop to use SelectorEventLoop.
 
 Example curl:
 
