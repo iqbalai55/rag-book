@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
 from agents.book_qdrant_agent import BookQdrantAgent
-from qdrant_client import QdrantClient  # ADD THIS
+from qdrant_client import QdrantClient  
 import os
 
 from langchain_community.embeddings import HuggingFaceEmbeddings
