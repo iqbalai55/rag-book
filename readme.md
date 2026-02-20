@@ -85,15 +85,15 @@ python main_fastapi.py
 
 note: there issue when use ProactorEventLoop in windows with AsyncPostgresSaver because psycopg, so i force async loop to use SelectorEventLoop.
 
-Example curl:
+#### Example curl
 
-Chat with agent: 
+#### Chat with agent
 
 ```bash
 curl -N http://localhost:8000/book-qa/stream -H "Content-Type: application/json" -d "{\"messages\":[{\"role\":\"user\",\"content\":\"What is fundamental principle of lean developent on software engineering?\"}],\"session_id\":\"session_1\"}"
 ```
 
-Ingest book via API:
+#### Ingest book via API
 
 ```bash
 curl -X POST "http://localhost:8000/book-qa/ingest" -F "file=@\"poa.pdf\""

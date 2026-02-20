@@ -24,7 +24,7 @@ import mlflow.langchain
 # ---------------- ENV ----------------
 load_dotenv()
 EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
-STORAGE_PATH = "./qdrant_storages"
+STORAGE_PATH = "./qdrant_storage"
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 MLRUNS_PATH = "./mlruns"
 
