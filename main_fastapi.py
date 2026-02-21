@@ -5,8 +5,10 @@ import os
 from contextlib import asynccontextmanager
 import uvicorn
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Security
 from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.security import APIKeyHeader
+
 from dotenv import load_dotenv
 
 from agents.book_qdrant_agent import BookQdrantAgent
@@ -27,6 +29,8 @@ EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 STORAGE_PATH = "./qdrant_storage"
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 MLRUNS_PATH = "./mlruns"
+API_KEY = os.getenv("API_KEY")
+api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
 
 # ---------------- QDRANT + EMBEDDINGS ----------------
 embedding_model = HuggingFaceEmbeddings(
@@ -69,32 +73,73 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+async def verify_api_key(api_key: str = Security(api_key_header)):
+    if api_key != API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid or missing API Key")
+    return api_key
+
 # ------------------ STREAMING ENDPOINT ------------------
-@app.post("/book-qa/stream")
+@app.post("/book-qa/stream", dependencies=[Depends(verify_api_key)])
 async def book_qa_stream(payload: ChatPayload):
+    
     async def event_generator():
-        async for chunk in agent_instance.ask_stream(
+        # Create DB per collection
+        dynamic_qdrant_db = QdrantDB(
+            collection_name=payload.collection_name,
+            embedding_model=embedding_model,
+            client=qdrant_client
+        )
+
+        dynamic_agent = BookQdrantAgent(
+            qdrant_db=dynamic_qdrant_db,
+            checkpointer=agent_instance.checkpointer
+        )
+
+        async for chunk in dynamic_agent.ask_stream(
             payload.messages[-1].content,
             session_id=payload.session_id
         ):
             yield chunk
+
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 # ------------------ INGEST BOOK ENDPOINT ------------------
-@app.post("/book-qa/ingest")
-async def ingest_pdf(file: UploadFile = File(...)):
+@app.post("/book-qa/ingest", dependencies=[Depends(verify_api_key)])
+async def ingest_pdf(
+    collection_name: str,
+    file: UploadFile = File(...)
+):
     try:
-        tmp_path = f"/tmp/{file.filename}"
+        tmp_path = f"./tmp_{file.filename}"
         with open(tmp_path, "wb") as f:
             f.write(await file.read())
 
-        # Ingest ke Qdrant
-        ingest_book(pdf_path=tmp_path, client=qdrant_client, collection_name="test")
+        # Create new QdrantDB instance per collection
+        dynamic_qdrant_db = QdrantDB(
+            collection_name=collection_name,
+            embedding_model=embedding_model,
+            client=qdrant_client
+        )
+
+        ingest_book(
+            pdf_path=tmp_path,
+            client=qdrant_client,
+            collection_name=collection_name
+        )
 
         os.remove(tmp_path)
-        return JSONResponse({"status": "success", "message": f"{file.filename} ingested"})
+
+        return JSONResponse({
+            "status": "success",
+            "collection": collection_name,
+            "message": f"{file.filename} ingested"
+        })
+
     except Exception as e:
-        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+        return JSONResponse(
+            {"status": "error", "message": str(e)},
+            status_code=500
+        )
     
 async def main():
     config = uvicorn.Config(app=app, host="127.0.0.1", port=8001)

@@ -1,11 +1,11 @@
 from pydantic import BaseModel
 from typing import List
 
-# Simple OpenAI-compatible payload
 class Message(BaseModel):
     role: str
     content: str
 
 class ChatPayload(BaseModel):
+    session_id: str
+    collection_name: str
     messages: List[Message]
-    session_id: str = "default"
