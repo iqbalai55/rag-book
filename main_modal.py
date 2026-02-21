@@ -11,6 +11,8 @@ from agents.book_qdrant_agent import BookQdrantAgent
 from rag.qdrant.qdrant_db import QdrantDB
 from schemas.chat import ChatPayload
 from ingest_book import ingest_book  
+from utils.chace_manager import CacheManager
+
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver  
 from qdrant_client import QdrantClient
@@ -47,6 +49,7 @@ async def verify_api_key(api_key: str = Security(api_key_header)):
 # ---------------- GLOBAL OBJECTS ----------------
 agent_checkpointer = None
 qdrant_client = None
+cache_manager = CacheManager(QDRANT_PATH)
 
 
 # ---------------- LIFESPAN ----------------
@@ -64,7 +67,9 @@ async def lifespan():
     global agent_checkpointer, qdrant_client
 
     async with AsyncPostgresSaver.from_conn_string(SUPABASE_DB_URL) as checkpointer:
-        await checkpointer.setup()
+        #await checkpointer.setup()
+        
+        await cache_manager.initialize(checkpointer)
 
         qdrant_client = QdrantClient(path=QDRANT_PATH)
 
@@ -89,17 +94,9 @@ def create_app():
 
         async def event_generator():
 
-            dynamic_qdrant_db = QdrantDB(
-                collection_name=payload.collection_name,
-                client=qdrant_client
-            )
+            agent = await cache_manager.get_agent(payload.collection_name)
 
-            dynamic_agent = BookQdrantAgent(
-                qdrant_db=dynamic_qdrant_db,
-                checkpointer=agent_checkpointer
-            )
-
-            async for chunk in dynamic_agent.ask_stream(
+            async for chunk in agent.ask_stream(
                 payload.messages[-1].content,
                 session_id=payload.session_id
             ):
@@ -118,11 +115,12 @@ def create_app():
             tmp_path = f"/tmp/{file.filename}"
             with open(tmp_path, "wb") as f:
                 f.write(await file.read())
+                
+            qdrant_db = await cache_manager.get_qdrant_db(collection_name)
 
             ingest_book(
                 pdf_path=tmp_path,
-                client=qdrant_client,
-                collection_name=collection_name
+                qdrant_db=qdrant_db
             )
 
             os.remove(tmp_path)

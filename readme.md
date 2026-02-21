@@ -19,8 +19,9 @@ Both approaches allow retrieval from a book vector database and generation of an
 - Benchmarking with Mflow:
     - Embedding
     - LLM model (on-going)
-- Fast API support for deployment
-- Modal.com support for deployment (on-going)
+- Fast API and Modal.com support for deployment:
+  - API key security
+  - Chaching QdrantDB, QdrantClient, and Agents
 
 # Tech Stack
 

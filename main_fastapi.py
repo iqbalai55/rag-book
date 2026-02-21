@@ -19,6 +19,7 @@ from schemas.chat import ChatPayload
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver  
 
 from ingest_book import ingest_book
+from utils.chace_manager import CacheManager
 
 import mlflow
 import mlflow.langchain
@@ -46,6 +47,8 @@ qdrant_db = QdrantDB(
     client=qdrant_client
 )
 
+cache_manager = CacheManager(STORAGE_PATH)
+
 agent_instance = None  # akan diinisialisasi di lifespan
 
 # ------------------ LIFESPAN ------------------
@@ -59,6 +62,8 @@ async def lifespan(app: FastAPI):
     # Async Postgres checkpointer
     async with AsyncPostgresSaver.from_conn_string(SUPABASE_DB_URL) as checkpointer:
         # await checkpointer.setup()  # ⚡ async setup
+        
+        await cache_manager.initialize(checkpointer)
 
         # Inisialisasi Book Agent
         agent_instance = BookQdrantAgent(qdrant_db=qdrant_db, checkpointer=checkpointer)
@@ -84,18 +89,9 @@ async def book_qa_stream(payload: ChatPayload):
     
     async def event_generator():
         # Create DB per collection
-        dynamic_qdrant_db = QdrantDB(
-            collection_name=payload.collection_name,
-            embedding_model=embedding_model,
-            client=qdrant_client
-        )
-
-        dynamic_agent = BookQdrantAgent(
-            qdrant_db=dynamic_qdrant_db,
-            checkpointer=agent_instance.checkpointer
-        )
-
-        async for chunk in dynamic_agent.ask_stream(
+        agent = await cache_manager.get_agent(payload.collection_name)
+        
+        async for chunk in agent.ask_stream(
             payload.messages[-1].content,
             session_id=payload.session_id
         ):
@@ -115,15 +111,11 @@ async def ingest_pdf(
             f.write(await file.read())
 
         # Create new QdrantDB instance per collection
-        dynamic_qdrant_db = QdrantDB(
-            collection_name=collection_name,
-            embedding_model=embedding_model,
-            client=qdrant_client
-        )
+        client = cache_manager.get_client()
 
         ingest_book(
             pdf_path=tmp_path,
-            client=qdrant_client,
+            client=client,
             collection_name=collection_name
         )
 
