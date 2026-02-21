@@ -5,33 +5,43 @@ from langchain_core.documents import Document
 from langchain.agents.middleware import SummarizationMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain.agents.middleware import ToolCallLimitMiddleware
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, ToolMessage, HumanMessage, AIMessage
 from rag.faiss.retrieve_faiss import load_vector_db
 from typing import List, AsyncGenerator
 import json
 
 BOOK_QA_PROMPT = SystemMessage(content="""
-Anda adalah asisten ahli yang menjawab pertanyaan HANYA berdasarkan konteks buku yang diberikan melalui tool `search_book`.
+Anda adalah tutor ahli yang menguasai materi dalam course ini.
+
+Tugas Anda adalah menjawab pertanyaan menggunakan pengetahuan dari materi yang tersedia melalui tool `search_book`. 
+Jawablah seperti seorang pengajar profesional yang benar-benar memahami materi — bukan seperti sistem yang sedang membaca konteks.
 
 Aturan:
-1. Jangan membuat jawaban di luar konteks yang tersedia.
-2. Jangan terlalu cepat menyimpulkan bahwa jawaban tidak ada.
-   - Analisis pertanyaan secara mendalam.
-   - Pertimbangkan kemungkinan parafrase, sinonim, atau penjelasan tidak langsung dalam konteks.
-   - Jika konsepnya ada tetapi dengan istilah berbeda, gunakan informasi tersebut.
-3. HANYA jika setelah analisis menyeluruh informasi memang tidak ditemukan dalam konteks,
-   katakan: "Saya tidak tahu berdasarkan konteks yang diberikan."
-4. Selalu sertakan sumber buku dan nomor halaman dari metadata chunk.
-   - Gunakan field 'source' sebagai judul buku.
+1. Gunakan materi dari course sebagai dasar utama jawaban.
+2. Anda boleh menjelaskan ulang dengan bahasa yang lebih mudah dipahami (parafrase) selama tetap setia pada isi materi.
+3. Jangan menyebutkan frasa seperti "berdasarkan konteks", "pada potongan teks", atau istilah teknis sistem lainnya.
+4. Jangan terlalu cepat menyimpulkan jawaban tidak ada.
+   - Pahami pertanyaan secara konseptual.
+   - Cocokkan dengan konsep yang relevan meskipun istilahnya berbeda.
+5. Anda boleh sedikit mengembangkan penjelasan agar lebih edukatif, selama tidak bertentangan dengan materi course.
+6. Jika memang setelah analisis menyeluruh topik tersebut benar-benar tidak ada dalam materi,
+   jawab hanya dengan:
+   "Topik tersebut tidak dibahas pada course ini."
+   (Jangan sertakan sumber dalam kondisi ini.)
+7. Jika jawaban ada, sertakan sumber dan nomor halaman dari metadata:
+   - Gunakan field 'source' sebagai judul.
    - Gunakan field 'pages' sebagai nomor halaman.
-5. Jawaban harus dalam bahasa Indonesia.
-6. Fokus jawaban untuk keperluan coding atau pembelajaran.
-7. Jawaban harus singkat, jelas, dan tepat.
+8. Jawaban harus dalam bahasa Indonesia.
+9. Fokus pada keperluan coding atau pembelajaran.
+10. Jawaban harus jelas, mengalir, dan terasa seperti penjelasan tutor.
 
-Format jawaban:
-<jawaban Anda di sini>
+Format jika jawaban ADA:
+<penjelasan Anda>
 
 Sumber: <source dari metadata>, Halaman <pages dari metadata>
+
+Format jika TIDAK ADA:
+Topik tersebut tidak dibahas pada course ini.
 """)
 
 class BookFaissAgent:
@@ -93,28 +103,60 @@ class BookFaissAgent:
         ):
             event["messages"][-1].pretty_print()
     
-    async def ask_stream(self, query: str, session_id: str = "book_thread") -> AsyncGenerator[str, None]:
-        """SSE generator for streaming"""
+    async def ask_stream(self, query: str, session_id: str = "book_thread"):
+
         config = {"configurable": {"thread_id": session_id}}
-        
-        async for event in self.agent.astream(
-            {"messages": [("user", query)]},
-            config=config,
-            stream_mode="values",  # Streams full state; use "updates" for deltas
-        ):
-            # Grab the latest message content (your agent state has "messages")
-            if event["messages"]:
-                last_msg = event["messages"][-1]
-                content = getattr(last_msg, "content", "") or ""
-                if content:
-                    chunk = {
-                        "id": "chatcmpl",
-                        "object": "chat.completion.chunk",
-                        "choices": [{"delta": {"content": content}, "finish_reason": None}]
-                    }
+
+        try:
+            async for event in self.agent.astream(
+                {"messages": [("user", query)]},
+                config=config,
+                stream_mode="values",  # lengkap
+            ):
+                messages = event.get("messages", [])
+                if not messages:
+                    continue
+
+                last_msg = messages[-1]
+
+                chunk = {"id": "chatcmpl", "type": None, "content": None}
+
+                # HumanMessage → bisa skip atau tetap dikirim kalau mau
+                if isinstance(last_msg, HumanMessage):
+                    chunk["type"] = "human"
+                    chunk["content"] = getattr(last_msg, "content", "")
                     yield f"data: {json.dumps(chunk)}\n\n"
-        
-        yield "data: [DONE]\n\n"
+                    continue
+
+                # ToolMessage → internal tool output
+                elif isinstance(last_msg, ToolMessage):
+                    chunk["type"] = "tool"
+                    chunk["content"] = getattr(last_msg, "content", "")
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                    continue
+
+                # AIMessage → bisa final atau reasoning internal
+                elif isinstance(last_msg, AIMessage):
+
+                    if getattr(last_msg, "tool_calls", None):
+                        # masih reasoning → internal
+                        chunk["type"] = "internal"
+                        chunk["content"] = getattr(last_msg, "content", "")
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                        continue
+
+                    # ✅ final answer
+                    chunk["type"] = "final"
+                    chunk["content"] = getattr(last_msg, "content", "")
+                    yield f"data: {json.dumps(chunk)}\n\n"
+
+            # pastikan DONE selalu dikirim
+            yield "data: [DONE]\n\n"
+
+        except Exception as e:
+            error_chunk = {"id": "chatcmpl", "type": "error", "content": str(e)}
+            yield f"data: {json.dumps(error_chunk)}\n\n"
+            yield "data: [DONE]\n\n"
 
     def get_agent(self):
         return self.agent
