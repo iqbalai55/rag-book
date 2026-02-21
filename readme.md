@@ -114,3 +114,13 @@ curl -X POST "http://localhost:8001/book-qa/ingest?collection_name=course_lean_s
   -F "file=@poa.pdf"
 ```
 
+
+curl -N https://moeh-iqbal432--book-qa-fastapi.modal.run/book-qa/stream -H "Content-Type: application/json" -H "x-api-key: supersecretkey123" -d "{\"session_id\":\"session_1\",\"collection_name\":\"kelas_koding\",\"messages\":[{\"role\":\"user\",\"content\":\"Apa itu berpikir komputasional?\"}]}"
+
+curl -X POST "https://moeh-iqbal432--book-qa-fastapi.modal.run/book-qa/ingest?collection_name=kelas_koding" -H "x-api-key: supersecretkey123" -F "file=@Koding dan Kecerdasan Artifisial untuk SMA MA Kelas X.pdf"
+
+curl -X POST "https://moeh-iqbal432--book-qa-fastapi.modal.run/book-qa/ingest?collection_name=kelas_koding" -H "x-api-key: supersecretkey123" -F "file=@Koding dan Kecerdasan Artifisial untuk SMA MA Kelas XI.pdf"
+
+curl -X POST "https://moeh-iqbal432--book-qa-fastapi.modal.run/book-qa/ingest?collection_name=kelas_koding" -H "x-api-key: supersecretkey123" -F "file=@Koding dan Kecerdasan Artifisial untuk SD MI Kelas V.pdf"
+
+curl -X POST "https://moeh-iqbal432--book-qa-fastapi.modal.run/book-qa/ingest?collection_name=kelas_koding" -H "x-api-key: supersecretkey123" -F "file=@Koding dan Kecerdasan Artifisial untuk SMP MTs Kelas VII.pdf"

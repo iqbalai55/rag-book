@@ -3,16 +3,18 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import asyncio
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings  
 from utils.chace_manager import CacheManager
 from langgraph.checkpoint.memory import InMemorySaver
+import torch
 
 EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 STORAGE_PATH = "./qdrant_storage"
 
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
 embedding_model = HuggingFaceEmbeddings(
     model_name=EMBED_MODEL_ID,
-    model_kwargs={"device": "cpu"}
+    model_kwargs={"device": device},
 )
 
 checkpointer = InMemorySaver()

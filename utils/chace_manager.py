@@ -4,7 +4,7 @@ from typing import Dict
 from qdrant_client import QdrantClient
 from rag.qdrant.qdrant_db import QdrantDB
 from agents.book_qdrant_agent import BookQdrantAgent
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings  
 
 
 class CacheManager:

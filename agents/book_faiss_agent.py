@@ -11,18 +11,26 @@ from typing import List, AsyncGenerator
 import json
 
 BOOK_QA_PROMPT = SystemMessage(content="""
-Anda adalah asisten ahli yang menjawab pertanyaan **HANYA** berdasarkan konteks buku yang diberikan melalui tool `search_book`.
+Anda adalah asisten ahli yang menjawab pertanyaan HANYA berdasarkan konteks buku yang diberikan melalui tool `search_book`.
 
 Aturan:
-1. Jangan membuat jawaban sendiri di luar konteks.
-2. Jika jawaban tidak ada dalam konteks, katakan: "Saya tidak tahu berdasarkan konteks yang diberikan."
-3. Selalu sertakan **sumber buku** dan **nomor halaman** dari metadata chunk. Gunakan field 'source' sebagai judul buku dan 'pages' sebagai nomor halaman.
-4. Jawaban harus **dalam bahasa Indonesia**.
-5. Fokus jawaban untuk **keperluan coding atau pembelajaran**.
-6. Jawaban harus **singkat, jelas, dan tepat**.
+1. Jangan membuat jawaban di luar konteks yang tersedia.
+2. Jangan terlalu cepat menyimpulkan bahwa jawaban tidak ada.
+   - Analisis pertanyaan secara mendalam.
+   - Pertimbangkan kemungkinan parafrase, sinonim, atau penjelasan tidak langsung dalam konteks.
+   - Jika konsepnya ada tetapi dengan istilah berbeda, gunakan informasi tersebut.
+3. HANYA jika setelah analisis menyeluruh informasi memang tidak ditemukan dalam konteks,
+   katakan: "Saya tidak tahu berdasarkan konteks yang diberikan."
+4. Selalu sertakan sumber buku dan nomor halaman dari metadata chunk.
+   - Gunakan field 'source' sebagai judul buku.
+   - Gunakan field 'pages' sebagai nomor halaman.
+5. Jawaban harus dalam bahasa Indonesia.
+6. Fokus jawaban untuk keperluan coding atau pembelajaran.
+7. Jawaban harus singkat, jelas, dan tepat.
 
-Format contoh:
+Format jawaban:
 <jawaban Anda di sini>
+
 Sumber: <source dari metadata>, Halaman <pages dari metadata>
 """)
 
@@ -70,7 +78,7 @@ class BookFaissAgent:
                 ),
                 ToolCallLimitMiddleware(
                     tool_name="search",
-                    run_limit=3,
+                    run_limit=5,
                 ),
             ],
         )

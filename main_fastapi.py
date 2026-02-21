@@ -18,6 +18,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from ingest_book import ingest_book
 from utils.chace_manager import CacheManager
 
+import torch
 import mlflow
 import mlflow.langchain
 
@@ -28,24 +29,21 @@ STORAGE_PATH = "./qdrant_storage"
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 MLRUNS_PATH = "./mlruns"
 API_KEY = os.getenv("API_KEY")
-api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
 
 # ---------------- EMBEDDINGS ----------------
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
 embedding_model = HuggingFaceEmbeddings(
     model_name=EMBED_MODEL_ID,
-    model_kwargs={"device": "cpu"}
+    model_kwargs={"device": device}
 )
 os.makedirs(STORAGE_PATH, exist_ok=True)
 
 # ---------------- CACHE MANAGER ----------------
 cache_manager = CacheManager(STORAGE_PATH, embedding_model=embedding_model)
 
-agent_instance = None  # akan diinisialisasi di lifespan
-
 # ------------------ LIFESPAN ------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global agent_instance
     
     # Check to make sure that we bypassed the original eventloop Policy....
     # assert isinstance(asyncio.get_event_loop_policy(), winloop.EventLoopPolicy)
@@ -66,6 +64,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
 async def verify_api_key(api_key: str = Security(api_key_header)):
     if api_key != API_KEY:
         raise HTTPException(status_code=403, detail="Invalid or missing API Key")

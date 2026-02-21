@@ -2,6 +2,7 @@ pdfplumber
 pandas
 langchain
 langchain-core
+langchain_huggingface
 python-dotenv>=1.1.1
 notebook
 transformers
@@ -32,9 +33,11 @@ openevals
 mlflow
 
 # fast api
-fastapi
+fastapi[all]
 uvicorn 
 
 # Checkpointer progrestsql
 psycopg[binary]
 langgraph-checkpoint-postgres 
+
+modal
