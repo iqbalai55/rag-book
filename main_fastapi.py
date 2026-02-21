@@ -11,10 +11,7 @@ from fastapi.security import APIKeyHeader
 
 from dotenv import load_dotenv
 
-from agents.book_qdrant_agent import BookQdrantAgent
-from qdrant_client import QdrantClient
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from rag.qdrant.qdrant_db import QdrantDB
 from schemas.chat import ChatPayload
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver  
 
@@ -33,21 +30,15 @@ MLRUNS_PATH = "./mlruns"
 API_KEY = os.getenv("API_KEY")
 api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
 
-# ---------------- QDRANT + EMBEDDINGS ----------------
+# ---------------- EMBEDDINGS ----------------
 embedding_model = HuggingFaceEmbeddings(
     model_name=EMBED_MODEL_ID,
     model_kwargs={"device": "cpu"}
 )
 os.makedirs(STORAGE_PATH, exist_ok=True)
 
-qdrant_client = QdrantClient(path=STORAGE_PATH)
-qdrant_db = QdrantDB(
-    collection_name="test",
-    embedding_model=embedding_model,
-    client=qdrant_client
-)
-
-cache_manager = CacheManager(STORAGE_PATH)
+# ---------------- CACHE MANAGER ----------------
+cache_manager = CacheManager(STORAGE_PATH, embedding_model=embedding_model)
 
 agent_instance = None  # akan diinisialisasi di lifespan
 
@@ -64,9 +55,6 @@ async def lifespan(app: FastAPI):
         # await checkpointer.setup()  # ⚡ async setup
         
         await cache_manager.initialize(checkpointer)
-
-        # Inisialisasi Book Agent
-        agent_instance = BookQdrantAgent(qdrant_db=qdrant_db, checkpointer=checkpointer)
 
         # Setup MLflow
         os.makedirs(MLRUNS_PATH, exist_ok=True)
@@ -95,6 +83,7 @@ async def book_qa_stream(payload: ChatPayload):
             payload.messages[-1].content,
             session_id=payload.session_id
         ):
+            print("Sending chunk:", chunk)
             yield chunk
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
@@ -110,13 +99,14 @@ async def ingest_pdf(
         with open(tmp_path, "wb") as f:
             f.write(await file.read())
 
-        # Create new QdrantDB instance per collection
-        client = cache_manager.get_client()
+        # Ambil QdrantDB instance untuk collection yang dimaksud
+        qdrant_db = await cache_manager.get_qdrant_db(collection_name)
 
+        # Panggil ingest_book dengan qdrant_db
         ingest_book(
             pdf_path=tmp_path,
-            client=client,
-            collection_name=collection_name
+            qdrant_db=qdrant_db,
+            embed_model_id=EMBED_MODEL_ID,
         )
 
         os.remove(tmp_path)
@@ -132,7 +122,7 @@ async def ingest_pdf(
             {"status": "error", "message": str(e)},
             status_code=500
         )
-    
+        
 async def main():
     config = uvicorn.Config(app=app, host="127.0.0.1", port=8001)
     server = uvicorn.Server(config)

@@ -15,7 +15,7 @@ from utils.chace_manager import CacheManager
 
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver  
-from qdrant_client import QdrantClient
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 import mlflow
 import mlflow.langchain
@@ -27,6 +27,12 @@ QDRANT_PATH = "/qdrant_storage"
 MLFLOW_PATH = "/mlruns"
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 API_KEY = os.getenv("API_KEY")
+EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+
+embedding_model = HuggingFaceEmbeddings(
+    model_name=EMBED_MODEL_ID,
+    model_kwargs={"device": "cpu"}
+)
 
 
 # ---------------- MODAL APP ----------------
@@ -49,7 +55,7 @@ async def verify_api_key(api_key: str = Security(api_key_header)):
 # ---------------- GLOBAL OBJECTS ----------------
 agent_checkpointer = None
 qdrant_client = None
-cache_manager = CacheManager(QDRANT_PATH)
+cache_manager = CacheManager(QDRANT_PATH, embedding_model=embedding_model)
 
 
 # ---------------- LIFESPAN ----------------
@@ -70,8 +76,6 @@ async def lifespan():
         #await checkpointer.setup()
         
         await cache_manager.initialize(checkpointer)
-
-        qdrant_client = QdrantClient(path=QDRANT_PATH)
 
         agent_checkpointer = checkpointer
 

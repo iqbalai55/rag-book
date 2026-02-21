@@ -91,7 +91,7 @@ note: there issue when use ProactorEventLoop in windows with AsyncPostgresSaver 
 #### Chat with agent
 
 ```bash
-curl -N http://localhost:8000/book-qa/stream \
+curl -N http://localhost:8001/book-qa/stream \
   -H "Content-Type: application/json" \
   -H "x-api-key: supersecretkey123" \
   -d '{
@@ -109,7 +109,7 @@ curl -N http://localhost:8000/book-qa/stream \
 #### Ingest book via API
 
 ```bash
-curl -X POST "http://localhost:8000/book-qa/ingest?collection_name=course_lean_software" \
+curl -X POST "http://localhost:8001/book-qa/ingest?collection_name=course_lean_software" \
   -H "x-api-key: supersecretkey123" \
   -F "file=@poa.pdf"
 ```
