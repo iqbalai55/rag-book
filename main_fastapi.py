@@ -94,7 +94,7 @@ async def ingest_pdf(
     file: UploadFile = File(...)
 ):
     try:
-        tmp_path = f"./tmp_{file.filename}"
+        tmp_path = f"./{file.filename}"
         with open(tmp_path, "wb") as f:
             f.write(await file.read())
 

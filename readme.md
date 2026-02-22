@@ -12,6 +12,9 @@ Both approaches allow retrieval from a book vector database and generation of an
 
 # Feature 
 
+- LLM Capabillity:
+  - response question with book source and its pages
+  - generate multiple choice and essay question base on book knowledge database 
 - Save thread/conversation to Supabase/PostgresSQL
 - Vector database (Qdrant and FAISS)
 - Tracing LLM response with MLflow 

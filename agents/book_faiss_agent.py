@@ -10,39 +10,8 @@ from rag.faiss.retrieve_faiss import load_vector_db
 from typing import List, AsyncGenerator
 import json
 
-BOOK_QA_PROMPT = SystemMessage(content="""
-Anda adalah tutor ahli yang menguasai materi dalam course ini.
+from prompts.general_rag import BOOK_QA_SYSTEM_PROMPT
 
-Tugas Anda adalah menjawab pertanyaan menggunakan pengetahuan dari materi yang tersedia melalui tool `search_book`. 
-Jawablah seperti seorang pengajar profesional yang benar-benar memahami materi — bukan seperti sistem yang sedang membaca konteks.
-
-Aturan:
-1. Gunakan materi dari course sebagai dasar utama jawaban.
-2. Anda boleh menjelaskan ulang dengan bahasa yang lebih mudah dipahami (parafrase) selama tetap setia pada isi materi.
-3. Jangan menyebutkan frasa seperti "berdasarkan konteks", "pada potongan teks", atau istilah teknis sistem lainnya.
-4. Jangan terlalu cepat menyimpulkan jawaban tidak ada.
-   - Pahami pertanyaan secara konseptual.
-   - Cocokkan dengan konsep yang relevan meskipun istilahnya berbeda.
-5. Anda boleh sedikit mengembangkan penjelasan agar lebih edukatif, selama tidak bertentangan dengan materi course.
-6. Jika memang setelah analisis menyeluruh topik tersebut benar-benar tidak ada dalam materi,
-   jawab hanya dengan:
-   "Topik tersebut tidak dibahas pada course ini."
-   (Jangan sertakan sumber dalam kondisi ini.)
-7. Jika jawaban ada, sertakan sumber dan nomor halaman dari metadata:
-   - Gunakan field 'source' sebagai judul.
-   - Gunakan field 'pages' sebagai nomor halaman.
-8. Jawaban harus dalam bahasa Indonesia.
-9. Fokus pada keperluan coding atau pembelajaran.
-10. Jawaban harus jelas, mengalir, dan terasa seperti penjelasan tutor.
-
-Format jika jawaban ADA:
-<penjelasan Anda>
-
-Sumber: <source dari metadata>, Halaman <pages dari metadata>
-
-Format jika TIDAK ADA:
-Topik tersebut tidak dibahas pada course ini.
-""")
 
 class BookFaissAgent:
     def __init__(self, faiss_path: str, checkpointer = None, k: int = 3):
@@ -76,7 +45,7 @@ class BookFaissAgent:
 
         self.agent = create_agent(
             model=self.llm,
-            system_prompt=BOOK_QA_PROMPT,
+            system_prompt=BOOK_QA_SYSTEM_PROMPT,
             checkpointer=self.checkpointer,
             tools=[search_book],
             middleware=[
@@ -104,14 +73,20 @@ class BookFaissAgent:
             event["messages"][-1].pretty_print()
     
     async def ask_stream(self, query: str, session_id: str = "book_thread"):
-
+        """
+        Stream response dari agent dengan detail lengkap:
+        - type: human / tool / internal / final
+        - content: isi pesan
+        - tool_name: nama tool yang digunakan (jika ada)
+        - metadata: info tambahan seperti source, page, atau args tool
+        """
         config = {"configurable": {"thread_id": session_id}}
 
         try:
             async for event in self.agent.astream(
                 {"messages": [("user", query)]},
                 config=config,
-                stream_mode="values",  # lengkap
+                stream_mode="values",  # atau "deltas" kalau mau
             ):
                 messages = event.get("messages", [])
                 if not messages:
@@ -119,9 +94,15 @@ class BookFaissAgent:
 
                 last_msg = messages[-1]
 
-                chunk = {"id": "chatcmpl", "type": None, "content": None}
+                chunk = {
+                    "id": "chatcmpl",
+                    "type": None,
+                    "content": None,
+                    "tool_name": None,
+                    "metadata": {}
+                }
 
-                # HumanMessage → bisa skip atau tetap dikirim kalau mau
+                # HumanMessage → optional dikirim
                 if isinstance(last_msg, HumanMessage):
                     chunk["type"] = "human"
                     chunk["content"] = getattr(last_msg, "content", "")
@@ -132,31 +113,42 @@ class BookFaissAgent:
                 elif isinstance(last_msg, ToolMessage):
                     chunk["type"] = "tool"
                     chunk["content"] = getattr(last_msg, "content", "")
+                    # Ambil metadata tambahan jika ada
+                    chunk["metadata"] = getattr(last_msg, "metadata", {})
                     yield f"data: {json.dumps(chunk)}\n\n"
                     continue
 
-                # AIMessage → bisa final atau reasoning internal
+                # AIMessage → reasoning internal atau final answer
                 elif isinstance(last_msg, AIMessage):
-
-                    if getattr(last_msg, "tool_calls", None):
-                        # masih reasoning → internal
+                    tool_calls = getattr(last_msg, "tool_calls", None)
+                    if tool_calls:
+                        # reasoning internal
                         chunk["type"] = "internal"
                         chunk["content"] = getattr(last_msg, "content", "")
+                        # bisa sertakan args atau output sementara dari tiap tool
+                        chunk["metadata"] = {"tool_calls": tool_calls}
                         yield f"data: {json.dumps(chunk)}\n\n"
                         continue
 
-                    # ✅ final answer
                     chunk["type"] = "final"
                     chunk["content"] = getattr(last_msg, "content", "")
+                    # sertakan metadata konteks jika ada
+                    chunk["metadata"] = getattr(last_msg, "metadata", {})
                     yield f"data: {json.dumps(chunk)}\n\n"
 
             # pastikan DONE selalu dikirim
             yield "data: [DONE]\n\n"
 
         except Exception as e:
-            error_chunk = {"id": "chatcmpl", "type": "error", "content": str(e)}
+            error_chunk = {
+                "id": "chatcmpl",
+                "type": "error",
+                "content": str(e),
+                "tool_name": None,
+                "metadata": {}
+            }
             yield f"data: {json.dumps(error_chunk)}\n\n"
             yield "data: [DONE]\n\n"
-
+            
     def get_agent(self):
         return self.agent
