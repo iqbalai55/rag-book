@@ -11,10 +11,15 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from docling.chunking import HybridChunker
 from qdrant_client import QdrantClient
 import mlflow
+import mlflow.langchain
 
 from agents.book_qdrant_agent import BookQdrantAgent
 from rag.qdrant.qdrant_db import QdrantDB
 from rag.qdrant.document_processor import DocumentProcessor
+
+# =============================
+# ENV & LOGGING
+# =============================
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -22,11 +27,17 @@ logging.basicConfig(level=logging.INFO)
 mlflow.set_experiment("Test qdrant agent")
 mlflow.langchain.autolog()
 
+# =============================
 # CONFIG
+# =============================
+
 EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 STORAGE_PATH   = "./qdrant_storage"
 MAX_TOKENS     = 256
 
+# =============================
+# TOKENIZER & CHUNKER
+# =============================
 
 tokenizer = AutoTokenizer.from_pretrained(EMBED_MODEL_ID)
 chunker   = HybridChunker(tokenizer=tokenizer)
@@ -37,10 +48,18 @@ processor = DocumentProcessor(
     max_tokens=MAX_TOKENS
 )
 
+# =============================
+# EMBEDDING MODEL
+# =============================
+
 embedding_model = HuggingFaceEmbeddings(
     model_name=EMBED_MODEL_ID,
     model_kwargs={"device": "cpu"}
 )
+
+# =============================
+# QDRANT
+# =============================
 
 client = QdrantClient(path=STORAGE_PATH)
 
@@ -50,53 +69,102 @@ qdrant_db = QdrantDB(
     client=client,
 )
 
+# =============================
+# AGENT
+# =============================
 
 agent = BookQdrantAgent(qdrant_db=qdrant_db, k=3)
 
 
+# =============================
+# STREAM PARSER
+# =============================
+
 async def run_stream(label: str, query: str, session_id: str):
-    print("\n" + "="*60)
+    print("\n" + "=" * 70)
     print(f"TEST: {label}")
-    print("="*60)
+    print("=" * 70)
 
     async for raw in agent.ask_stream(query, session_id=session_id):
+
+        # End of stream
         if raw.strip() == "data: [DONE]":
-            print("[DONE]")
+            print("\n[DONE]")
             break
 
+        # Remove prefix
         data_str = raw.removeprefix("data: ").strip()
+
         try:
             chunk = json.loads(data_str)
         except Exception:
             print("RAW:", raw)
             continue
 
-        t = chunk.get("type")
+        msg_type = chunk.get("type")
 
-        if t == "internal":
+        # =============================
+        # INTERNAL TOOL PLANNING
+        # =============================
+        if msg_type == "internal":
+            print("\n[INTERNAL TOOL CALL]")
             for tc in chunk.get("metadata", {}).get("tool_calls", []):
-                print(f"  [internal] tool={tc.get('name')} | args={tc.get('args')}")
+                print(f"  tool={tc.get('name')} | args={tc.get('args')}")
 
-        elif t == "tool":
+        # =============================
+        # GENERIC TOOL OUTPUT
+        # =============================
+        elif msg_type == "tool":
             tool_name = chunk.get("metadata", {}).get("tool_name")
-            print(f"  [tool] {tool_name}: {str(chunk.get('content', ''))[:200]}")
+            print(f"\n[TOOL OUTPUT] {tool_name}")
+            print(str(chunk.get("content", ""))[:300])
 
-        elif t == "mcq":
+        # =============================
+        # MULTIPLE CHOICE
+        # =============================
+        elif msg_type == "multiple_choice_question":
             content = chunk.get("content", {})
-            print(f"  [MCQ] topic={content.get('topic')} | {len(content.get('questions', []))} questions")
+
+            print("\n[MULTIPLE CHOICE QUESTIONS]")
+            print(f"Topic      : {content.get('topic')}")
+            print(f"Difficulty : {content.get('difficulty')}")
+            print(f"Total      : {len(content.get('questions', []))}")
+            print("-" * 50)
+
             print(json.dumps(content, indent=2, ensure_ascii=False))
 
-        elif t == "essay":
+        # =============================
+        # ESSAY QUESTIONS
+        # =============================
+        elif msg_type == "essay_question":
             content = chunk.get("content", {})
-            print(f"  [Essay] topic={content.get('topic')} | {len(content.get('questions', []))} questions")
+
+            print("\n[ESSAY QUESTIONS]")
+            print(f"Topic      : {content.get('topic')}")
+            print(f"Difficulty : {content.get('difficulty')}")
+            print(f"Total      : {len(content.get('questions', []))}")
+            print("-" * 50)
+
             print(json.dumps(content, indent=2, ensure_ascii=False))
 
-        elif t == "final":
-            print(f"  [final] {chunk.get('content', '')}")
+        # =============================
+        # FINAL ANSWER
+        # =============================
+        elif msg_type == "final":
+            print("\n[FINAL ANSWER]")
+            print(chunk.get("content", ""))
 
-        elif t == "error":
-            print(f"  [ERROR] {chunk.get('content', '')}")
+        # =============================
+        # ERROR
+        # =============================
+        elif msg_type == "error":
+            print("\n[ERROR]")
+            print(chunk.get("content", ""))
 
+
+# =============================
+# MAIN TEST
+# =============================
 
 async def main():
 
@@ -129,4 +197,5 @@ async def main():
     )
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

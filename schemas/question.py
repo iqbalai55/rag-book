@@ -29,7 +29,6 @@ class EssayQuestion(BaseModel):
         ..., description="Explanation why this question is important"
     )
 
-
 class EssayResponse(BaseModel):
     topic: str
     difficulty: str

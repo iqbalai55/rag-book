@@ -164,6 +164,8 @@ class BookQdrantAgent:
             - metadata bawaan message
         """
         config = {"configurable": {"thread_id": session_id}}
+        
+        tool_question_generated = False  
 
         try:
             async for event in self.agent.astream(
@@ -202,6 +204,7 @@ class BookQdrantAgent:
                     chunk["metadata"] = message_metadata
 
                     if tool_name == "generate_mcq":
+                        tool_question_generated = True
                         chunk["type"] = "multiple_choice_question"
                         try:
                             chunk["content"] = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
@@ -209,6 +212,7 @@ class BookQdrantAgent:
                             chunk["content"] = raw_content
 
                     elif tool_name == "generate_essay_questions":
+                        tool_question_generated = True
                         chunk["type"] = "essay_question"
                         try:
                             chunk["content"] = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
@@ -232,6 +236,9 @@ class BookQdrantAgent:
                         chunk["content"] = getattr(last_msg, "content", "")
                         chunk["metadata"] = {"tool_calls": tool_calls}
                         yield f"data: {json.dumps(chunk)}\n\n"
+                        continue
+                    
+                    if tool_question_generated:
                         continue
 
                     # FINAL ANSWER

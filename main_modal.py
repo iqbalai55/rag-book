@@ -64,6 +64,7 @@ image = (
     .add_local_python_source("utils")
     .add_local_python_source("agents")
     .add_local_python_source("rag")
+    .add_local_python_source("prompts")
     .add_local_python_source("ingest_book")
 )
 
