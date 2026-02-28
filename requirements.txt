@@ -3,6 +3,8 @@ pandas
 langchain
 langchain-core
 langchain_huggingface
+langchain-anthropic
+langchain-opena
 python-dotenv>=1.1.1
 notebook
 transformers
