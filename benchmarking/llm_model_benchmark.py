@@ -122,7 +122,9 @@ if __name__ == "__main__":
     llm_models_to_test = [
         {"provider": "openai", "model": "gpt-5-nano"},
         {"provider": "anthropic", "model": "claude-3-5-sonnet-20241022"},
-        {"provider": "openrouter", "model": "openai/gpt-4o-mini"},
+        {"provider": "openrouter", "model": "meta-llama/llama-3.1-8b-instruct"},
+        {"provider": "openrouter", "model": "mistralai/mistral-7b-instruct"},
+        {"provider": "openrouter", "model": "google/gemma-2-9b-it"},
     ]
 
     for config in llm_models_to_test:
