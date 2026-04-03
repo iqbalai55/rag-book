@@ -1,7 +1,7 @@
 import os
 from contextlib import asynccontextmanager
 import modal
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Security
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Security, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security import APIKeyHeader
 
@@ -13,6 +13,13 @@ from langchain_huggingface import HuggingFaceEmbeddings
 import torch
 import mlflow
 import mlflow.langchain
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import PlainTextResponse
+
+limiter = Limiter(key_func=get_remote_address)
 
 # ---------------- MODAL SECRET ----------------
 secret = modal.Secret.from_dict({
@@ -104,10 +111,16 @@ async def lifespan(app: FastAPI):
 def fastapi_app():
     
     web_app = FastAPI(lifespan=lifespan)
+    web_app.state.limiter = limiter
+    web_app.add_exception_handler(
+        RateLimitExceeded,
+        lambda request, exc: PlainTextResponse("Rate limit exceeded", status_code=429)
+    )
 
     # ---------------- STREAMING ----------------
     @web_app.post("/book-qa/stream", dependencies=[Depends(verify_api_key)])
-    async def book_qa_stream(payload: ChatPayload):
+    @limiter.limit("10/minute")
+    async def book_qa_stream(request: Request, payload: ChatPayload):
         async def event_generator():
             agent = await cache_manager.get_agent(payload.collection_name)
             async for chunk in agent.ask_stream(
@@ -119,7 +132,8 @@ def fastapi_app():
 
     # ---------------- INGEST ----------------
     @web_app.post("/book-qa/ingest", dependencies=[Depends(verify_api_key)])
-    async def ingest_pdf(collection_name: str, file: UploadFile = File(...)):
+    @limiter.limit("3/minute")
+    async def ingest_pdf(request: Request, collection_name: str, file: UploadFile = File(...)):
         tmp_path = f"/tmp/{file.filename}"
         with open(tmp_path, "wb") as f:
             f.write(await file.read())

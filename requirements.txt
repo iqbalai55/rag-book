@@ -45,3 +45,6 @@ psycopg[binary]
 langgraph-checkpoint-postgres 
 
 modal
+
+# fast api utils
+slowapi

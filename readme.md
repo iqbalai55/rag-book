@@ -25,6 +25,7 @@ Both approaches allow retrieval from a book vector database and generation of an
 - Fast API and Modal.com support for deployment:
   - API key security
   - Chaching QdrantDB, QdrantClient, and Agents
+  - Rate limiter
 
 # Tech Stack
 

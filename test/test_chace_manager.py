@@ -4,7 +4,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import asyncio
 from langchain_huggingface import HuggingFaceEmbeddings  
-from utils.chace_manager import CacheManager
+from utils.collection_manager import CacheManager
 from langgraph.checkpoint.memory import InMemorySaver
 import torch
 

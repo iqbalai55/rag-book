@@ -22,6 +22,13 @@ import torch
 import mlflow
 import mlflow.langchain
 
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import PlainTextResponse
+
+limiter = Limiter(key_func=get_remote_address)
+
 # ---------------- ENV ----------------
 load_dotenv()
 EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
@@ -63,6 +70,8 @@ async def lifespan(app: FastAPI):
         yield  # FastAPI siap jalan
 
 app = FastAPI(lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, lambda r, e: PlainTextResponse("Rate limit exceeded", status_code=429))
 
 api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
 async def verify_api_key(api_key: str = Security(api_key_header)):
@@ -72,7 +81,8 @@ async def verify_api_key(api_key: str = Security(api_key_header)):
 
 # ------------------ STREAMING ENDPOINT ------------------
 @app.post("/book-qa/stream", dependencies=[Depends(verify_api_key)])
-async def book_qa_stream(payload: ChatPayload):
+@limiter.limit("10/minute")
+async def book_qa_stream(request: Request, payload: ChatPayload):
     
     async def event_generator():
         # Create DB per collection
@@ -89,7 +99,9 @@ async def book_qa_stream(payload: ChatPayload):
 
 # ------------------ INGEST BOOK ENDPOINT ------------------
 @app.post("/book-qa/ingest", dependencies=[Depends(verify_api_key)])
+@limiter.limit("3/minute")
 async def ingest_pdf(
+    request: Request,
     collection_name: str,
     file: UploadFile = File(...)
 ):
