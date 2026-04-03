@@ -5,7 +5,7 @@ import os
 from contextlib import asynccontextmanager
 import uvicorn
 
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Security
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Security, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security import APIKeyHeader
 
