@@ -4,7 +4,7 @@ langchain
 langchain-core
 langchain_huggingface
 langchain-anthropic
-langchain-opena
+langchain-openai
 python-dotenv>=1.1.1
 notebook
 transformers
