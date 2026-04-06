@@ -14,8 +14,8 @@ import mlflow
 import mlflow.langchain
 
 from agents.book_qdrant_agent import BookQdrantAgent
-from rag.qdrant.qdrant_db import QdrantDB
-from rag.qdrant.document_processor import DocumentProcessor
+from services.rag.qdrant.qdrant_db import QdrantDB
+from services.rag.qdrant.document_processor import DocumentProcessor
 
 # =============================
 # ENV & LOGGING

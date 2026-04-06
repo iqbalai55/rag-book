@@ -10,7 +10,7 @@ from langchain.agents.middleware import SummarizationMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
-from rag.qdrant.qdrant_db import QdrantDB
+from services.rag.qdrant.qdrant_db import QdrantDB
 
 from prompts.general_rag import BOOK_QA_SYSTEM_PROMPT, MCQ_PROMPT, ESSAY_QUESTION_PROMPT
 from schemas.question import MCQResponse, EssayResponse

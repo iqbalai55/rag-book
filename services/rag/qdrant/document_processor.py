@@ -3,6 +3,7 @@ from typing import List, Dict
 from docling.document_converter import DocumentConverter
 from docling.chunking import HybridChunker
 import os
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +70,41 @@ class DocumentProcessor:
             raise
 
     def process_document(self, file_path: str) -> List[Dict]:
-        """
-        Process a single document and return chunks.
-        """
-        document = self.load_document(file_path)
-        return self.chunk_document(document, file_path)
+        converter = DocumentConverter()
+
+        all_chunks = []
+
+        PAGE_STEP = 5  
+
+        for start in range(0, 200, PAGE_STEP):
+            try:
+                logger.info(f"Processing pages {start}-{start+PAGE_STEP}")
+
+                result = converter.convert(
+                    source=file_path,
+                    page_range=(start, start + PAGE_STEP)
+                )
+
+                document = result.document
+                chunks = self.chunk_document(document, file_path)
+
+                all_chunks.extend(chunks)
+
+                # cleanup
+                del result
+                del document
+
+                import gc
+                gc.collect()
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+            except Exception as e:
+                logger.warning(f"Skip pages {start}-{start+PAGE_STEP}: {e}")
+                continue
+
+        return all_chunks
 
     def process_documents(self, file_paths: List[str]) -> List[Dict]:
         """

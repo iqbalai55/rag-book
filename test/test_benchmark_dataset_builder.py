@@ -13,8 +13,8 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 from docling.chunking import HybridChunker
 
-from rag.qdrant.qdrant_db import QdrantDB
-from rag.qdrant.document_processor import DocumentProcessor
+from services.rag.qdrant.qdrant_db import QdrantDB
+from services.rag.qdrant.document_processor import DocumentProcessor
 from dataset.dataset_builder import BenchmarkDatasetBuilder
 
 

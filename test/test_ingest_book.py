@@ -2,7 +2,7 @@ import requests
 import os
 
 # ---------------- CONFIG ----------------
-FASTAPI_URL = "http://localhost:8000/book-qa/ingest"  # change if deployed
+FASTAPI_URL = "http://localhost:8000/book-qa/ingest" 
 PDF_PATH = r"E:\Coding\KitaPandu\rag-book\book\poa.pdf"
 
 # Make sure file exists

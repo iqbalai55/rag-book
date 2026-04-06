@@ -6,7 +6,7 @@ from langchain.agents.middleware import SummarizationMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain_core.messages import SystemMessage, ToolMessage, HumanMessage, AIMessage
-from rag.faiss.retrieve_faiss import load_vector_db
+from services.rag.faiss.retrieve_faiss import load_vector_db
 from typing import List, AsyncGenerator
 import json
 

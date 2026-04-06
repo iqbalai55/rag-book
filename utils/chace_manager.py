@@ -2,7 +2,7 @@ import asyncio
 from typing import Dict
 
 from qdrant_client import QdrantClient
-from rag.qdrant.qdrant_db import QdrantDB
+from services.rag.qdrant.qdrant_db import QdrantDB
 from agents.book_qdrant_agent import BookQdrantAgent
 from langchain_huggingface import HuggingFaceEmbeddings  
 

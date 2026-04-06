@@ -6,7 +6,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import mlflow
 
-from rag.qdrant.qdrant_db import QdrantDB
+from services.rag.qdrant.qdrant_db import QdrantDB
 from agents.benchmark_dataset_builder import BenchmarkDatasetBuilder
 
 

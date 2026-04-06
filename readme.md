@@ -27,6 +27,10 @@ Both approaches allow retrieval from a book vector database and generation of an
   - Chaching QdrantDB, QdrantClient, and Agents
   - Rate limiter
 
+## Additional Feature 
+
+- Agent that create podcast audio from book knowledge using indonesia languange -> still need improvement
+
 # Tech Stack
 
 - Supabase to store Agent state
@@ -34,6 +38,7 @@ Both approaches allow retrieval from a book vector database and generation of an
 - Qdrant and Faiss to store vectorize book data
 - MLFlow for observability and benchmarking
 - Fast API dan Modal.com for deployment
+- Chatterbox for tts
 
 ## Installation
 
@@ -67,7 +72,7 @@ venv\Scripts\activate
 Install dependencies:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements/requirements_main.txt
 ```
 
 ## Usage
@@ -117,3 +122,12 @@ curl -X POST "http://localhost:8001/book-qa/ingest?collection_name=course_lean_s
   -H "x-api-key: supersecretkey123" \
   -F "file=@poa.pdf"
 ```
+
+## Imporvement Plan
+
+### General 
+- More stuctured test file.
+
+### Audio
+- currently on testing tts engine using https://huggingface.co/grandhigh/Chatterbox-TTS-Indonesian, i think need more robust tts engine.
+- Make more natural in bahasa indonesia.

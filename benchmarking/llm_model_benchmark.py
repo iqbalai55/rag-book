@@ -6,8 +6,8 @@ import mlflow
 # Add project root
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from rag.qdrant.qdrant_db import QdrantDB
-from rag.qdrant.document_processor import DocumentProcessor
+from services.rag.qdrant.qdrant_db import QdrantDB
+from services.rag.qdrant.document_processor import DocumentProcessor
 from utils.llm_config import get_chat_model
 
 from transformers import AutoTokenizer

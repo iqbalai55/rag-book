@@ -1,5 +1,5 @@
-from rag.qdrant.document_processor import DocumentProcessor
-from rag.qdrant.qdrant_db import QdrantDB
+from services.rag.qdrant.document_processor import DocumentProcessor
+from services.rag.qdrant.qdrant_db import QdrantDB
 from transformers import AutoTokenizer
 from docling.chunking import HybridChunker
 from qdrant_client import QdrantClient
@@ -39,3 +39,26 @@ def ingest_book(
     qdrant_db.add_documents(docs)
 
     logger.info("✅ Book indexed successfully!")
+
+if __name__ == "__main__":
+
+    from qdrant_client import QdrantClient
+    from langchain_huggingface import HuggingFaceEmbeddings
+
+    embedding_model = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        model_kwargs={"device": "cpu"}
+    )
+
+    qdrant_client = QdrantClient(path="./qdrant_storage")
+
+    qdrant_db = QdrantDB(
+        collection_name="real_books",
+        embedding_model=embedding_model,
+        client=qdrant_client
+    )
+
+    pdf_path = r"book\Refactoring for Software Design Smells Managing Technical Debt.pdf"
+
+    ingest_book(pdf_path=pdf_path, qdrant_db=qdrant_client)
+

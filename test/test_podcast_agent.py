@@ -5,11 +5,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from dotenv import load_dotenv
 
 from qdrant_client import QdrantClient
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langgraph.checkpoint.postgres import PostgresSaver
 
+from agents.book_podcast_agent import BookPodcastAgent
 from services.rag.qdrant.qdrant_db import QdrantDB
-from agents.book_qdrant_agent import BookQdrantAgent
 
 load_dotenv()
 
@@ -31,10 +31,22 @@ SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 with PostgresSaver.from_conn_string(SUPABASE_DB_URL) as checkpointer:
     checkpointer.setup()
 
-    agent = BookQdrantAgent(
+    agent = BookPodcastAgent(
         qdrant_db=qdrant_db,
         checkpointer=checkpointer
     )
 
-    # ===== Test Ask =====
-    agent.ask("What is fundamental principle in lean software development?")
+    for event in agent.agent.stream(
+        {
+            "messages": [
+                {"role": "user", "content": "Buat podcast tentang code smell"}
+            ]
+        },
+        config={
+            "configurable": {
+                "thread_id": "podcast-session-1"
+            }
+        },
+        stream_mode="updates"  # 🔥 WAJIB
+    ):
+        print(event)
