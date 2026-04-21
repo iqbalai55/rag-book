@@ -16,7 +16,7 @@ Both approaches allow retrieval from a book vector database and generation of an
   - response question with book source and its pages
   - generate multiple choice and essay question base on book knowledge database 
 - Save thread/conversation to Supabase/PostgresSQL
-- Vector database (Qdrant and FAISS)
+- Vector database (Qdrant)
 - Tracing LLM response with MLflow 
 - Evaluator to evaluate the result (on-going)
 - Benchmarking with Mflow:
@@ -35,7 +35,7 @@ Both approaches allow retrieval from a book vector database and generation of an
 
 - Supabase to store Agent state
 - Langchain to create Agent
-- Qdrant and Faiss to store vectorize book data
+- Qdrant to store vectorize book data
 - MLFlow for observability and benchmarking
 - Fast API dan Modal.com for deployment
 - Chatterbox for tts
