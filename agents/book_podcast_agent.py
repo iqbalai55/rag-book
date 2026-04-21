@@ -13,8 +13,8 @@ from services.audio.tts.tts_engine import generate_tts_podcast
 class BookPodcastAgent(BookQdrantAgent):
     """Extended agent with end-to-end podcast generation."""
 
-    def __init__(self, qdrant_db, checkpointer=None, k: int = 3):
-        super().__init__(qdrant_db, checkpointer, k)
+    def __init__(self, qdrant_db, course_id: str, checkpointer=None, k: int = 3):
+        super().__init__(qdrant_db, course_id, checkpointer, k)
 
         @tool("generate_complete_podcast", description="Cari materi dari buku, buat naskah, dan hasilkan audio podcast sekaligus.")
         def generate_complete_podcast(

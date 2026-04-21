@@ -21,10 +21,12 @@ logger = logging.getLogger(__name__)
 class BookQdrantAgent:
     """Book Agent that uses QdrantDB for RAG retrieval."""
 
-    def __init__(self, qdrant_db: QdrantDB, checkpointer=None, k: int = 3):
+    def __init__(self, qdrant_db: QdrantDB, course_id: str, checkpointer=None, k: int = 3):
         self.llm = get_chat_model()
         self.qdrant_db = qdrant_db
         self.k = k
+
+        self.course_id = course_id
 
         self.checkpointer = checkpointer if checkpointer is not None else InMemorySaver()
 
@@ -103,48 +105,57 @@ class BookQdrantAgent:
         )
 
     def _retrieve_context(self, topic: str) -> Tuple[str, List[Document], List[str]]:
-        """Shared retrieval logic used by all tools."""
-        retrieved_docs: List[Document] = self.qdrant_db.query(topic, k=self.k)
+        """Shared retrieval logic used by all tools (multitenant-safe)."""
 
-        # 🔍 Debug: confirm return type from qdrant_db.query()
+        retrieved_docs: List[Document] = self.qdrant_db.query(
+            topic,
+            course_id=self.course_id,  
+            k=self.k
+        )
+
         logger.debug("TYPE of retrieved_docs: %s", type(retrieved_docs))
-        if retrieved_docs:
-            logger.debug("FIRST ITEM type: %s | value: %s", type(retrieved_docs[0]), retrieved_docs[0])
 
-        merged_context = ""
+        if retrieved_docs:
+            logger.debug(
+                "FIRST ITEM type: %s | value: %s",
+                type(retrieved_docs[0]),
+                retrieved_docs[0]
+            )
+
+        merged_context = []
         sources = []
         seen_texts = set()
 
         for doc in retrieved_docs:
-            # Guard: ensure doc is a proper Document object
             if not isinstance(doc, Document):
                 logger.warning("Unexpected doc type: %s | value: %s", type(doc), doc)
                 continue
 
             text = "\n".join(
-                [line.strip() for line in doc.page_content.splitlines() if line.strip()]
+                line.strip()
+                for line in doc.page_content.splitlines()
+                if line.strip()
             )
 
-            if text not in seen_texts:
-                source = doc.metadata.get("source", "unknown")
-                pages = doc.metadata.get("pages", [])
-                pages_str = ", ".join(map(str, pages))
-                merged_context += (
-                    f"(Source: {source}, Pages: {pages_str})\n"
-                    f"Content:\n{text}\n\n"
-                )
-                seen_texts.add(text)
+            if not text or text in seen_texts:
+                continue
 
             source = doc.metadata.get("source", "unknown")
             pages = doc.metadata.get("pages", [])
-            pages_str = ", ".join(map(str, pages))
+            pages_str = ", ".join(map(str, pages)) if pages else "-"
+
+            merged_context.append(
+                f"(Source: {source}, Pages: {pages_str})\n"
+                f"Content:\n{text}"
+            )
+
             sources.append(f"{source} (hal {pages_str})")
+            seen_texts.add(text)
 
-        unique_sources = list(set(sources))
-        return merged_context.strip(), retrieved_docs, unique_sources
+        return "\n\n".join(merged_context), retrieved_docs, list(set(sources))
 
-    def ask(self, query: str):
-        config = {"configurable": {"thread_id": "1"}}
+    def ask(self, query: str, session_id: str = "book_thread"):
+        config = {"configurable": {"thread_id": session_id}}
 
         for event in self.agent.stream(
             {"messages": [{"role": "user", "content": query}]},

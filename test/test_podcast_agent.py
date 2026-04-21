@@ -44,7 +44,7 @@ with PostgresSaver.from_conn_string(SUPABASE_DB_URL) as checkpointer:
         },
         config={
             "configurable": {
-                "thread_id": "podcast-session-1"
+                "thread_id": "podcast-session-2"
             }
         },
         stream_mode="updates"  # 🔥 WAJIB

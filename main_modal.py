@@ -4,6 +4,7 @@ import modal
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Security, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security import APIKeyHeader
+import uuid
 
 from schemas.chat import ChatPayload
 from ingest_book import ingest_book
@@ -122,7 +123,7 @@ def fastapi_app():
     @limiter.limit("10/minute")
     async def book_qa_stream(request: Request, payload: ChatPayload):
         async def event_generator():
-            agent = await cache_manager.get_agent(payload.collection_name)
+            agent = await cache_manager.get_agent(payload.course_id)
             async for chunk in agent.ask_stream(
                 payload.messages[-1].content,
                 session_id=payload.session_id
@@ -133,20 +134,43 @@ def fastapi_app():
     # ---------------- INGEST ----------------
     @web_app.post("/book-qa/ingest", dependencies=[Depends(verify_api_key)])
     @limiter.limit("3/minute")
-    async def ingest_pdf(request: Request, collection_name: str, file: UploadFile = File(...)):
-        tmp_path = f"/tmp/{file.filename}"
-        with open(tmp_path, "wb") as f:
-            f.write(await file.read())
+    async def ingest_pdf(
+        request: Request,
+        course_id: str,  # 🔥 NEW: tenant identifier
+        file: UploadFile = File(...)
+    ):
+        tmp_path = f"/tmp/{uuid.uuid4()}_{file.filename}"
 
-        qdrant_db = await cache_manager.get_qdrant_db(collection_name)
-        ingest_book(pdf_path=tmp_path, qdrant_db=qdrant_db, embed_model_id=EMBED_MODEL_ID)
-        embedding_cache_volume.commit()
-        os.remove(tmp_path)
+        try:
+            with open(tmp_path, "wb") as f:
+                f.write(await file.read())
 
-        return JSONResponse({
-            "status": "success",
-            "collection": collection_name,
-            "message": f"{file.filename} ingested"
-        })
+            qdrant_db = await cache_manager.get_qdrant_db()
+
+            ingest_book(
+                pdf_path=tmp_path,
+                qdrant_db=qdrant_db,
+                course_id=course_id,
+                embed_model_id=EMBED_MODEL_ID
+            )
+
+            embedding_cache_volume.commit()
+
+            return JSONResponse({
+                "status": "success",
+                "collection": "lms_content",
+                "course_id": course_id,
+                "message": f"{file.filename} ingested"
+            })
+
+        except Exception as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)},
+                status_code=500
+            )
+
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
     return web_app

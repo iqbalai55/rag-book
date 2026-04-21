@@ -118,9 +118,15 @@ curl -N http://localhost:8001/book-qa/stream \
 #### Ingest book via API
 
 ```bash
-curl -X POST "http://localhost:8001/book-qa/ingest?collection_name=course_lean_software" \
+# Course A
+curl -X POST "http://localhost:8001/book-qa/ingest?course_id=ai_basics" \
   -H "x-api-key: supersecretkey123" \
-  -F "file=@poa.pdf"
+  -F "file=@ai.pdf"
+
+# Course B
+curl -X POST "http://localhost:8001/book-qa/ingest?course_id=software_design" \
+  -H "x-api-key: supersecretkey123" \
+  -F "file=@design.pdf"
 ```
 
 ## Imporvement Plan

@@ -1,15 +1,23 @@
 import logging
 from typing import List, Dict, Optional
+
 from langchain_core.documents import Document
 from langchain_qdrant import QdrantVectorStore
+
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import Distance, VectorParams
+from qdrant_client.http.models import (
+    Distance,
+    VectorParams,
+    Filter,
+    FieldCondition,
+    MatchValue,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class QdrantDB:
-    """Wrapper for LangChain QdrantVectorStore with automatic collection creation."""
+    """Multitenant Qdrant wrapper using payload-based filtering."""
 
     def __init__(
         self,
@@ -17,102 +25,183 @@ class QdrantDB:
         embedding_model,
         client: Optional[QdrantClient] = None,
     ):
-        """
-        Initialize QdrantVectorStore and auto-create collection if missing.
-
-        Args:
-            collection_name (str): Qdrant collection name
-            embedding_model: LangChain embedding model instance
-            client (QdrantClient, optional): Qdrant client instance. Defaults to in-memory.
-        """
         self.client = client if client is not None else QdrantClient(":memory:")
         self.collection_name = collection_name
         self.embedding_model = embedding_model
 
-        # Determine vector size safely
         vector_size = self._detect_vector_size(embedding_model)
 
-        # Auto-create collection if missing
         if not self._collection_exists(collection_name):
             logger.info(
-                f"Collection '{collection_name}' not found. Creating new collection with size {vector_size}."
+                f"Collection '{collection_name}' not found. Creating with size {vector_size}"
             )
             self.client.create_collection(
                 collection_name=collection_name,
                 vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
             )
+
+            # ✅ Create payload index for multitenancy
+            self._create_payload_indexes()
+
         else:
             logger.info(f"Collection '{collection_name}' already exists.")
 
-        # Initialize LangChain QdrantVectorStore
         self.vectorstore = QdrantVectorStore(
             client=self.client,
             collection_name=collection_name,
             embedding=embedding_model,
         )
-        logger.info(f"QdrantDB initialized for collection: {collection_name}")
+
+        logger.info(f"QdrantDB initialized: {collection_name}")
+
+    # -------------------------
+    # INTERNAL HELPERS
+    # -------------------------
 
     def _detect_vector_size(self, embedding_model) -> int:
-        """Try to detect embedding dimension."""
         try:
             test_vector = embedding_model.embed_query("test")
             return len(test_vector)
         except Exception:
-            # fallback attribute
             return getattr(embedding_model, "embedding_function_output_dim", 384)
 
     def _collection_exists(self, name: str) -> bool:
-        """Check if a Qdrant collection exists."""
         try:
             self.client.get_collection(name)
             return True
-        except ValueError:
+        except Exception:
             return False
 
-    def add_documents(self, chunks: List[Dict]):
+    def _create_payload_indexes(self):
+        """Create indexes for fast filtering."""
+        try:
+            self.client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name="metadata.course_id",
+                field_schema="keyword",
+            )
+        except Exception as e:
+            logger.warning(f"Payload index creation skipped: {e}")
+
+    # -------------------------
+    # CORE METHODS
+    # -------------------------
+
+    def add_documents(self, chunks: List[Dict], course_id: Optional[str] = None):
         """
-        Add a list of chunk dicts to the collection.
+        Add documents with enforced multitenancy metadata.
 
         Args:
-            chunks (List[Dict]): Each dict should contain 'text' and optional 'metadata'
+            chunks: list of {"text": ..., "metadata": {...}}
+            course_id: optional global course_id to inject
         """
-        docs = [Document(page_content=c["text"], metadata=c.get("metadata", {})) for c in chunks]
+        docs = []
+
+        for c in chunks:
+            metadata = c.get("metadata", {})
+
+            # ✅ enforce course_id
+            if course_id:
+                metadata["course_id"] = course_id
+
+            if "course_id" not in metadata:
+                raise ValueError("Missing 'course_id' in metadata")
+
+            docs.append(Document(page_content=c["text"], metadata=metadata))
+
         if docs:
             self.vectorstore.add_documents(docs)
-            logger.info(f"Added {len(docs)} chunks to collection '{self.collection_name}'")
+            logger.info(f"Added {len(docs)} docs to '{self.collection_name}'")
         else:
             logger.warning("No documents to add.")
 
-    def query(self, query_text: str, k: int = 5) -> List[Document]:
+    # -------------------------
+    # QUERY (MULTITENANT)
+    # -------------------------
+
+    def query(
+        self,
+        query_text: str,
+        course_id: Optional[str] = None,
+        k: int = 5,
+        extra_filters: Optional[Dict[str, str]] = None,
+    ) -> List[Document]:
         """
-        Perform similarity search in the collection.
+        Multitenant query with optional filtering.
 
         Args:
-            query_text (str): Query string
-            k (int, optional): Number of results. Defaults to 5.
-
-        Returns:
-            List[Document]: Top-k documents
+            query_text: user query
+            course_id: filter by course
+            k: top-k
+            extra_filters: additional metadata filters
         """
-        results = self.vectorstore.similarity_search(query_text, k=k)
+
+        conditions = []
+
+        if course_id:
+            conditions.append(
+                FieldCondition(
+                    key="metadata.course_id",
+                    match=MatchValue(value=course_id),
+                )
+            )
+
+        if extra_filters:
+            for key, value in extra_filters.items():
+                conditions.append(
+                    FieldCondition(
+                        key=f"metadata.{key}",
+                        match=MatchValue(value=value),
+                    )
+                )
+
+        qdrant_filter = Filter(must=conditions) if conditions else None
+
+        results = self.vectorstore.similarity_search(
+            query_text,
+            k=k,
+            filter=qdrant_filter,
+        )
+
         logger.info(f"Query returned {len(results)} results")
         return results
 
+    # -------------------------
+    # DELETE
+    # -------------------------
+
     def delete_by_ids(self, ids: List[str]):
-        """Delete points from the collection by their IDs."""
         if ids:
-            self.vectorstore.client.delete(
+            self.client.delete(
                 collection_name=self.collection_name,
-                points_selector={"ids": ids}
+                points_selector={"ids": ids},
             )
-            logger.info(f"Deleted {len(ids)} points from collection '{self.collection_name}'")
+            logger.info(f"Deleted {len(ids)} points")
         else:
             logger.warning("No IDs provided for deletion.")
 
+    def delete_by_course(self, course_id: str):
+        """Delete all data for a course."""
+        self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="metadata.course_id",
+                        match=MatchValue(value=course_id),
+                    )
+                ]
+            ),
+        )
+        logger.info(f"Deleted all documents for course '{course_id}'")
+
+    # -------------------------
+    # COLLECTION MANAGEMENT
+    # -------------------------
+
     def drop_collection(self):
-        """Delete the entire collection."""
         if self._collection_exists(self.collection_name):
-            self.vectorstore.client.delete_collection(collection_name=self.collection_name)
+            self.client.delete_collection(collection_name=self.collection_name)
             logger.info(f"Dropped collection '{self.collection_name}'")
         else:
             logger.warning(f"Collection '{self.collection_name}' does not exist")

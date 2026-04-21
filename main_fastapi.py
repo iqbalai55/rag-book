@@ -4,6 +4,7 @@ import selectors
 import os
 from contextlib import asynccontextmanager
 import uvicorn
+import uuid
 
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Security, Request
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -102,21 +103,24 @@ async def book_qa_stream(request: Request, payload: ChatPayload):
 @limiter.limit("3/minute")
 async def ingest_pdf(
     request: Request,
-    collection_name: str,
+    course_id: str, 
     file: UploadFile = File(...)
 ):
     try:
-        tmp_path = f"./{file.filename}"
+        # safer temp filename (avoid overwrite)
+        tmp_path = f"./tmp_{uuid.uuid4()}_{file.filename}"
+
         with open(tmp_path, "wb") as f:
             f.write(await file.read())
 
-        # Ambil QdrantDB instance untuk collection yang dimaksud
-        qdrant_db = await cache_manager.get_qdrant_db(collection_name)
+        # ✅ ALWAYS use single collection
+        qdrant_db = await cache_manager.get_qdrant_db("lms_content")
 
-        # Panggil ingest_book dengan qdrant_db
+        # ✅ pass course_id into ingestion
         ingest_book(
             pdf_path=tmp_path,
             qdrant_db=qdrant_db,
+            course_id=course_id,  # 🔥 key change
             embed_model_id=EMBED_MODEL_ID,
         )
 
@@ -124,7 +128,8 @@ async def ingest_pdf(
 
         return JSONResponse({
             "status": "success",
-            "collection": collection_name,
+            "collection": "lms_content",
+            "course_id": course_id,
             "message": f"{file.filename} ingested"
         })
 

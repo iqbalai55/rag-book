@@ -7,5 +7,5 @@ class Message(BaseModel):
 
 class ChatPayload(BaseModel):
     session_id: str
-    collection_name: str
+    course_id: str
     messages: List[Message]
