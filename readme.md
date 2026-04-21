@@ -6,7 +6,7 @@ This project explores how to build a **good RAG (Retrieval-Augmented Generation)
 Currently, we have implemented **two approaches**:
 
 - **Qdrant-based RAG agent**
-- **FAISS-based RAG agent**
+- **Qdrant-based RAG Podcast Agent**
 
 Both approaches allow retrieval from a book vector database and generation of answers using a language model.
 
