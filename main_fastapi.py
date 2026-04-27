@@ -114,7 +114,7 @@ async def ingest_pdf(
             f.write(await file.read())
 
         # ✅ ALWAYS use single collection
-        qdrant_db = await cache_manager.get_qdrant_db("lms_content")
+        qdrant_db = await cache_manager.get_qdrant_db()
 
         # ✅ pass course_id into ingestion
         ingest_book(

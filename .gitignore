@@ -62,3 +62,5 @@ mlruns/
 qdrant_storage
 
 uploads/
+
+tmp*
