@@ -1,4 +1,5 @@
 import logging
+from pypdf import PdfReader
 from typing import List, Dict
 from docling.document_converter import DocumentConverter
 from docling.chunking import HybridChunker
@@ -37,6 +38,10 @@ class DocumentProcessor:
             logger.info(f"Chunking document with max_tokens: {self.max_tokens}")
             
             chunks = self.chunker.chunk(dl_doc=document, max_tokens=self.max_tokens)
+            
+            count = sum(1 for _ in self.chunker.chunk(dl_doc=document, max_tokens=self.max_tokens))
+            print(f"TOTAL CHUNKS: {count}")
+
             chunked_with_metadata = []
             filename = os.path.basename(file_path)
 
@@ -71,18 +76,22 @@ class DocumentProcessor:
 
     def process_document(self, file_path: str) -> List[Dict]:
         converter = DocumentConverter()
+        reader = PdfReader(file_path)
+
+        total_pages = len(reader.pages)
 
         all_chunks = []
+        PAGE_STEP = 5
 
-        PAGE_STEP = 5  
-
-        for start in range(0, 200, PAGE_STEP):
+        for start in range(0, total_pages, PAGE_STEP):
             try:
-                logger.info(f"Processing pages {start}-{start+PAGE_STEP}")
+                end = min(start + PAGE_STEP, total_pages)
+
+                logger.info(f"Processing pages {start}-{end}")
 
                 result = converter.convert(
                     source=file_path,
-                    page_range=(start, start + PAGE_STEP)
+                    page_range=(start + 1, end)  # Docling usually 1-based
                 )
 
                 document = result.document
@@ -90,7 +99,6 @@ class DocumentProcessor:
 
                 all_chunks.extend(chunks)
 
-                # cleanup
                 del result
                 del document
 
@@ -101,7 +109,7 @@ class DocumentProcessor:
                     torch.cuda.empty_cache()
 
             except Exception as e:
-                logger.warning(f"Skip pages {start}-{start+PAGE_STEP}: {e}")
+                logger.warning(f"Skip pages {start}-{end}: {e}")
                 continue
 
         return all_chunks
