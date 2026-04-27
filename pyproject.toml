@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rag-book"
+version = "0.1.0"
+description = "RAG Book - Retrieval Augmented Generation for book Q&A"
+authors = [{name = "KitaPandu"}]
+dependencies = [
+    "pdfplumber",
+    "pandas",
+    "langchain",
+    "langchain-core",
+    "langchain-huggingface",
+    "langchain-anthropic",
+    "langchain-openai",
+    "langchain-community",
+    "python-dotenv>=1.1.1",
+    "notebook",
+    "transformers",
+    "datasets>=2.2.0",
+    "pyarrow",
+    "numpy",
+    "requests>=2.26.0",
+    "sentence_transformers>=2.2.0",
+    "torch",
+    "tqdm",
+    "rich",
+    "InstructorEmbedding",
+    "faiss-cpu",
+    "pyperclip",
+    "ipywidgets",
+    "qdrant-client",
+    "langchain-qdrant",
+    "docling",
+    "docling-core",
+    "easyocr",
+    "fastembed",
+    "openevals",
+    "mlflow",
+    "fastapi[all]",
+    "uvicorn",
+    "psycopg[binary]",
+    "langgraph-checkpoint-postgres",
+    "modal",
+    "slowapi",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=22.0.0",
+    "isort>=5.0.0",
+    "flake8>=4.0.0",
+    "mypy>=0.900",
+    "pytest-cov>=3.0.0",
+    "pytest-mock>=3.0.0"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--disable-warnings",
+    "--tb=short"
+]
+markers = [
+    "unit: marks tests as unit tests",
+    "integration: marks tests as integration tests",
+    "slow: marks tests as slow running",
+    "asyncio: marks tests as async"
+]

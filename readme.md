@@ -1,4 +1,4 @@
-
+ 
 # RAG Book Agent Exploration
 
 This project explores how to build a **good RAG (Retrieval-Augmented Generation) book agent**, allowing us to ask questions using our **book knowledge database**. The goal is to create an agent that can answer queries **accurately and concisely**, while always citing the source and page from the book metadata.
@@ -47,7 +47,7 @@ Both approaches allow retrieval from a book vector database and generation of an
 ```bash
 git clone <repository-url>
 cd ad-applicability-extractor
-````
+```
 
 ### 2️⃣ Create Virtual Environment
 
@@ -128,6 +128,43 @@ curl -X POST "http://localhost:8001/book-qa/ingest?course_id=software_design" \
   -H "x-api-key: supersecretkey123" \
   -F "file=@design.pdf"
 ```
+
+## Testing
+
+This project uses pytest for testing. To run the tests:
+
+```bash
+# Run all tests
+pytest
+
+# Run tests with verbose output
+pytest -v
+
+# Run specific test file
+pytest test/test_ingest_book.py
+
+# Run Qdrant-related tests
+pytest test/test_qdrant.py
+
+# Run tests with coverage
+pytest --cov=./ --cov-report=html
+```
+
+### Test Structure
+
+- `test/conftest.py`: Shared fixtures and configuration
+- `test/test_ingest_book.py`: Tests for book ingestion API endpoint
+- `test/test_qdrant.py`: Tests for Qdrant agent and related components
+- Additional test files for other components
+
+### Writing Tests
+
+When adding new tests:
+1. Follow the existing test structure and naming conventions
+2. Use fixtures from `conftest.py` for common setup
+3. Mock external dependencies when appropriate
+4. Include both positive and negative test cases
+5. Use descriptive test names that clearly indicate what is being tested
 
 ## Imporvement Plan
 
