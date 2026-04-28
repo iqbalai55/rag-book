@@ -9,6 +9,7 @@ import uuid
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Security, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security import APIKeyHeader
+from qdrant_client import QdrantClient
 
 from dotenv import load_dotenv
 
@@ -33,7 +34,10 @@ limiter = Limiter(key_func=get_remote_address)
 # ---------------- ENV ----------------
 load_dotenv()
 EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
-STORAGE_PATH = "./qdrant_storage"
+qdrant_client = QdrantClient(
+    url=os.getenv("QDRANT_ENDPOINT"),
+    api_key=os.getenv("QDRANT_API_KEY")
+)
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 MLRUNS_PATH = "./mlruns"
 API_KEY = os.getenv("API_KEY")
@@ -44,10 +48,9 @@ embedding_model = HuggingFaceEmbeddings(
     model_name=EMBED_MODEL_ID,
     model_kwargs={"device": device}
 )
-os.makedirs(STORAGE_PATH, exist_ok=True)
 
 # ---------------- CACHE MANAGER ----------------
-cache_manager = CacheManager(STORAGE_PATH, embedding_model=embedding_model)
+cache_manager = CacheManager(qdrant_client, embedding_model=embedding_model)
 
 # ------------------ LIFESPAN ------------------
 @asynccontextmanager
@@ -58,8 +61,9 @@ async def lifespan(app: FastAPI):
 
     # Async Postgres checkpointer
     async with AsyncPostgresSaver.from_conn_string(SUPABASE_DB_URL) as checkpointer:
-        # await checkpointer.setup()  # ⚡ async setup
         
+        #await checkpointer.setup()  # ⚡ async setup
+    
         await cache_manager.initialize(checkpointer)
 
         # Setup MLflow
@@ -87,7 +91,7 @@ async def book_qa_stream(request: Request, payload: ChatPayload):
     
     async def event_generator():
         # Create DB per collection
-        agent = await cache_manager.get_agent(payload.collection_name)
+        agent = await cache_manager.get_agent(payload.course_id)
         
         async for chunk in agent.ask_stream(
             payload.messages[-1].content,
@@ -108,7 +112,7 @@ async def ingest_pdf(
 ):
     try:
         # safer temp filename (avoid overwrite)
-        tmp_path = f"./tmp_{uuid.uuid4()}_{file.filename}"
+        tmp_path = f"./{file.filename}"
 
         with open(tmp_path, "wb") as f:
             f.write(await file.read())

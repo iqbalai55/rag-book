@@ -100,19 +100,7 @@ note: there issue when use ProactorEventLoop in windows with AsyncPostgresSaver 
 #### Chat with agent
 
 ```bash
-curl -N http://localhost:8001/book-qa/stream \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: supersecretkey123" \
-  -d '{
-    "session_id": "session_1",
-    "collection_name": "course_lean_software",
-    "messages": [
-      {
-        "role": "user",
-        "content": "What is fundamental principle of lean development in software engineering?"
-      }
-    ]
-  }'
+curl -N http://localhost:8001/book-qa/stream -H "Content-Type: application/json" -H "x-api-key: yoour_api_key" -d "{\"session_id\":\"session_1\",\"course_id\":\"software_design\",\"messages\":[{\"role\":\"user\",\"content\":\"What is the basic principle of Pancasila as Indonesia state ideology?\"}]}"
 ```
 
 #### Ingest book via API

@@ -14,6 +14,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 import torch
 import mlflow
 import mlflow.langchain
+from qdrant_client import QdrantClient
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -24,14 +25,24 @@ limiter = Limiter(key_func=get_remote_address)
 
 # ---------------- MODAL SECRET ----------------
 secret = modal.Secret.from_dict({
+    "LLM_PROVIDER": os.getenv("LLM_PROVIDER"),
+    "LLM_MODEL": os.getenv("LLM_MODEL"),
+    "HUGGINGFACEHUB_API_TOKEN": os.getenv("HUGGINGFACEHUB_API_TOKEN"),
+    "OPENROUTER_API_KEY": os.getenv("OPENROUTER_API_KEY"),
     "SUPABASE_DB_URL": os.getenv("SUPABASE_DB_URL"),
     "API_KEY": os.getenv("API_KEY"),
     "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
     "OPENAI_MODEL": os.getenv("OPENAI_MODEL"),
+    "QDRANT_ENDPOINT": os.getenv("QDRANT_ENDPOINT"),
+    "QDRANT_API_KEY": os.getenv("QDRANT_API_KEY")
 })
 
 # ---------------- CONSTANTS ----------------
-QDRANT_PATH = "/qdrant_storage"
+qdrant_client = QdrantClient(
+    url=os.getenv("QDRANT_ENDPOINT"),
+    api_key=os.getenv("QDRANT_API_KEY")
+)
+
 MLFLOW_PATH = "/mlruns"
 HF_CACHE_PATH = "/hf_cache"
 EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
@@ -45,8 +56,10 @@ embedding_model = HuggingFaceEmbeddings(
 )
 
 # ---------------- CACHE MANAGER ----------------
-cache_manager = CacheManager(QDRANT_PATH, embedding_model=embedding_model)
-
+cache_manager = CacheManager(
+    qdrant_client=qdrant_client,
+    embedding_model=embedding_model
+)
 # ---------------- API KEY ----------------
 api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
 async def verify_api_key(api_key: str = Security(api_key_header)):
@@ -67,11 +80,11 @@ image = (
         "poppler-utils",      # PDF processing
         "ffmpeg",             # Video/audio if needed
     ])
-    .pip_install_from_requirements("requirements.txt")
+    .pip_install_from_requirements(r"requirements\requirements_main.txt")
     .add_local_python_source("schemas")
     .add_local_python_source("utils")
     .add_local_python_source("agents")
-    .add_local_python_source("rag")
+    .add_local_python_source("services")
     .add_local_python_source("prompts")
     .add_local_python_source("ingest_book")
 )
@@ -86,6 +99,7 @@ embedding_cache_volume = modal.Volume.from_name("hf_embedding_cache")
 async def lifespan(app: FastAPI):
     async with AsyncPostgresSaver.from_conn_string( os.environ["SUPABASE_DB_URL"]) as checkpointer:
 
+        #await checkpointer.setup()
         await cache_manager.initialize(checkpointer)
 
         # 3️⃣ MLflow setup
@@ -102,7 +116,6 @@ async def lifespan(app: FastAPI):
     timeout=2*3600,
     gpu="T4",
     volumes={
-        QDRANT_PATH: qdrant_volume,
         MLFLOW_PATH: mlflow_volume,
         HF_CACHE_PATH: embedding_cache_volume,
     },
@@ -139,7 +152,7 @@ def fastapi_app():
         course_id: str,  # 🔥 NEW: tenant identifier
         file: UploadFile = File(...)
     ):
-        tmp_path = f"/tmp/{uuid.uuid4()}_{file.filename}"
+        tmp_path = f"./{file.filename}"
 
         try:
             with open(tmp_path, "wb") as f:

@@ -43,7 +43,7 @@ class DocumentProcessor:
             print(f"TOTAL CHUNKS: {count}")
 
             chunked_with_metadata = []
-            filename = os.path.basename(file_path)
+            filename = os.path.splitext(os.path.basename(file_path))[0]
 
             for chunk in chunks:
                 chunk_metadata = chunk.model_dump(exclude="text", exclude_none=True)
