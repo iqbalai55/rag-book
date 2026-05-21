@@ -4,11 +4,11 @@ from typing import List, Dict, Any, Tuple
 
 from langchain_core.documents import Document
 
-from utils.llm_config import get_chat_model
-from schemas.question import MCQResponse, EssayResponse
-from prompts.general_rag import MCQ_PROMPT, ESSAY_QUESTION_PROMPT
+from core.utils.llm_config import get_chat_model
+from core.schemas.question import MCQResponse, EssayResponse
+from core.prompts.general_rag import MCQ_PROMPT, ESSAY_QUESTION_PROMPT
 
-from utils.toc_extractor import (
+from core.utils.toc_extractor import (
     load_document,
     extract_pages,
     find_toc_pages,
