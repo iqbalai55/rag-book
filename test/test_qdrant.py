@@ -13,8 +13,8 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from agents.book_qdrant_agent import BookQdrantAgent
-from services.rag.qdrant.qdrant_db import QdrantDB
-from services.rag.qdrant.document_processor import DocumentProcessor
+from core.rag.qdrant.qdrant_db import QdrantDB
+from core.rag.qdrant.document_processor import DocumentProcessor
 
 
 @pytest.fixture

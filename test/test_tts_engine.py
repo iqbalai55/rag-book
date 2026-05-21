@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from services.audio.tts.tts_engine import generate_tts, generate_tts_podcast
+from core.tts.tts_engine import generate_tts, generate_tts_podcast
 
 
 @pytest.fixture

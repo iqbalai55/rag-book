@@ -8,7 +8,7 @@ from core.schemas.podcast import PodcastScriptResponse
 
 from agents.book_qdrant_agent import BookQdrantAgent
 
-from services.audio.tts.tts_engine import generate_tts_podcast
+from core.tts.tts_engine import generate_tts_podcast
 
 class BookPodcastAgent(BookQdrantAgent):
     """Extended agent with end-to-end podcast generation."""

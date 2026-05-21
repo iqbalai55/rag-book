@@ -11,8 +11,8 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from docling.chunking import HybridChunker
 import mlflow
 
-from services.rag.qdrant.qdrant_db import QdrantDB  
-from services.rag.qdrant.document_processor import DocumentProcessor 
+from core.rag.qdrant.qdrant_db import QdrantDB  
+from core.rag.qdrant.document_processor import DocumentProcessor 
 from evaluator.relevance_grade_document_evaluator import relevance_grading_scorer
 
 # Load environment variables from .env
