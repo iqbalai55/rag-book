@@ -6,14 +6,12 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security import APIKeyHeader
 import uuid
 
-from schemas.chat import ChatPayload
-from ingest_book import ingest_book
-from utils.chace_manager import CacheManager
+from core.schemas.chat import ChatPayload
+from infra.ingest_book import ingest_book
+from core.utils.cache_manager import CacheManager
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langchain_huggingface import HuggingFaceEmbeddings
 import torch
-import mlflow
-import mlflow.langchain
 from qdrant_client import QdrantClient
 
 from slowapi import Limiter
@@ -34,7 +32,10 @@ secret = modal.Secret.from_dict({
     "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
     "OPENAI_MODEL": os.getenv("OPENAI_MODEL"),
     "QDRANT_ENDPOINT": os.getenv("QDRANT_ENDPOINT"),
-    "QDRANT_API_KEY": os.getenv("QDRANT_API_KEY")
+    "QDRANT_API_KEY": os.getenv("QDRANT_API_KEY"),
+    "LANGSMITH_API_KEY": os.getenv("LANGSMITH_API_KEY"),
+    "LANGSMITH_TRACING": os.getenv("LANGSMITH_TRACING"),
+    "LANGSMITH_PROJECT": os.getenv("LANGSMITH_PROJECT")
 })
 
 # ---------------- CONSTANTS ----------------
@@ -43,7 +44,6 @@ qdrant_client = QdrantClient(
     api_key=os.getenv("QDRANT_API_KEY")
 )
 
-MLFLOW_PATH = "/mlruns"
 HF_CACHE_PATH = "/hf_cache"
 EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 
@@ -81,16 +81,15 @@ image = (
         "ffmpeg",             # Video/audio if needed
     ])
     .pip_install_from_requirements(r"requirements\requirements_main.txt")
-    .add_local_python_source("schemas")
-    .add_local_python_source("utils")
+    .add_local_python_source("core/schemas")
+    .add_local_python_source("core/utils")
     .add_local_python_source("agents")
     .add_local_python_source("services")
-    .add_local_python_source("prompts")
-    .add_local_python_source("ingest_book")
+    .add_local_python_source("core/prompts")
+    .add_local_python_source("infra/ingest_book.py")
 )
 
 qdrant_volume = modal.Volume.from_name("qdrant_storage_volume")
-mlflow_volume = modal.Volume.from_name("mlflow_runs_volume")
 embedding_cache_volume = modal.Volume.from_name("hf_embedding_cache")
 
 
@@ -102,11 +101,9 @@ async def lifespan(app: FastAPI):
         #await checkpointer.setup()
         await cache_manager.initialize(checkpointer)
 
-        # 3️⃣ MLflow setup
-        os.makedirs(MLFLOW_PATH, exist_ok=True)
-        mlflow.set_tracking_uri(f"file:{MLFLOW_PATH}")
-        mlflow.set_experiment("book_qa_streaming")
-        mlflow.langchain.autolog()
+        # Setup LangSmith observability
+        os.environ.setdefault("LANGSMITH_TRACING", os.getenv("LANGSMITH_TRACING", "true"))
+        os.environ.setdefault("LANGSMITH_PROJECT", os.getenv("LANGSMITH_PROJECT", "rag-book-production"))
 
         yield
 
@@ -116,7 +113,6 @@ async def lifespan(app: FastAPI):
     timeout=2*3600,
     gpu="T4",
     volumes={
-        MLFLOW_PATH: mlflow_volume,
         HF_CACHE_PATH: embedding_cache_volume,
     },
     image=image

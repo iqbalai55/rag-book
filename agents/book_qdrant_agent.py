@@ -3,7 +3,7 @@ import json
 from typing import Tuple, List
 from langchain.tools import tool
 
-from utils.llm_config import get_chat_model
+from core.utils.llm_config import get_chat_model
 from langchain_core.documents import Document
 from langchain.agents import create_agent
 from langchain.agents.middleware import SummarizationMiddleware
@@ -12,8 +12,8 @@ from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from services.rag.qdrant.qdrant_db import QdrantDB
 
-from prompts.general_rag import BOOK_QA_SYSTEM_PROMPT, MCQ_PROMPT, ESSAY_QUESTION_PROMPT
-from schemas.question import MCQResponse, EssayResponse
+from core.prompts.general_rag import BOOK_QA_SYSTEM_PROMPT, MCQ_PROMPT, ESSAY_QUESTION_PROMPT
+from core.schemas.question import MCQResponse, EssayResponse
 
 logger = logging.getLogger(__name__)
 

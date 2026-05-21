@@ -3,8 +3,8 @@ from typing import Tuple, List
 from langchain_core.documents import Document
 from langchain.agents import create_agent
 
-from prompts.podcast import PODCAST_SCRIPT_PROMPT, PODCAST_SYSTEM_PROMPT
-from schemas.podcast import PodcastScriptResponse  
+from core.prompts.podcast import PODCAST_SCRIPT_PROMPT, PODCAST_SYSTEM_PROMPT
+from core.schemas.podcast import PodcastScriptResponse  
 
 from agents.book_qdrant_agent import BookQdrantAgent
 

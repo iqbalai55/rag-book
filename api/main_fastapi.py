@@ -14,15 +14,13 @@ from qdrant_client import QdrantClient
 from dotenv import load_dotenv
 
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from schemas.chat import ChatPayload
+from core.schemas.chat import ChatPayload
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver  
 
-from ingest_book import ingest_book
-from utils.chace_manager import CacheManager
+from infra.ingest_book import ingest_book
+from core.utils.cache_manager import CacheManager
 
 import torch
-import mlflow
-import mlflow.langchain
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -39,7 +37,6 @@ qdrant_client = QdrantClient(
     api_key=os.getenv("QDRANT_API_KEY")
 )
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
-MLRUNS_PATH = "./mlruns"
 API_KEY = os.getenv("API_KEY")
 
 # ---------------- EMBEDDINGS ----------------
@@ -55,22 +52,12 @@ cache_manager = CacheManager(qdrant_client, embedding_model=embedding_model)
 # ------------------ LIFESPAN ------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    
-    # Check to make sure that we bypassed the original eventloop Policy....
-    # assert isinstance(asyncio.get_event_loop_policy(), winloop.EventLoopPolicy)
-
-    # Async Postgres checkpointer
     async with AsyncPostgresSaver.from_conn_string(SUPABASE_DB_URL) as checkpointer:
-        
-        #await checkpointer.setup()  # ⚡ async setup
-    
         await cache_manager.initialize(checkpointer)
 
-        # Setup MLflow
-        os.makedirs(MLRUNS_PATH, exist_ok=True)
-        mlflow.set_tracking_uri(f"file:{MLRUNS_PATH}")
-        mlflow.set_experiment("book_qa_streaming")
-        mlflow.langchain.autolog()
+        # Setup LangSmith observability
+        os.environ.setdefault("LANGSMITH_TRACING", os.getenv("LANGSMITH_TRACING", "true"))
+        os.environ.setdefault("LANGSMITH_PROJECT", os.getenv("LANGSMITH_PROJECT", "rag-book-production"))
 
         yield  # FastAPI siap jalan
 
@@ -149,4 +136,4 @@ async def main():
     await server.serve()
 
 if __name__ == "__main__":
-    asyncio.run(main(), debug=True, loop_factory=lambda: asyncio.SelectorEventLoop(selectors.SelectSelector()))
+    asyncio.run(main(), loop_factory=lambda: asyncio.SelectorEventLoop(selectors.SelectSelector()))
