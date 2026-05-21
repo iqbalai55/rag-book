@@ -17,7 +17,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from core.schemas.chat import ChatPayload
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver  
 
-from infra.ingest_book import ingest_book
+from core.utils.ingest_book import ingest_book
 from core.utils.cache_manager import CacheManager
 
 import torch

@@ -7,7 +7,7 @@ from fastapi.security import APIKeyHeader
 import uuid
 
 from core.schemas.chat import ChatPayload
-from infra.ingest_book import ingest_book
+from core.utils.ingest_book import ingest_book
 from core.utils.cache_manager import CacheManager
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -87,7 +87,7 @@ image = (
     .add_local_python_source("core/rag")
     .add_local_python_source("core/tts")
     .add_local_python_source("core/prompts")
-    .add_local_python_source("infra/ingest_book.py")
+    .add_local_python_source("core/utils")
 )
 
 qdrant_volume = modal.Volume.from_name("qdrant_storage_volume")
