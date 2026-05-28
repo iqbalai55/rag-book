@@ -69,14 +69,21 @@ supabase_storage = SupabaseStorage()
 # ------------------ LIFESPAN ------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with AsyncPostgresSaver.from_conn_string(SUPABASE_DB_URL) as checkpointer:
-        await cache_manager.initialize(checkpointer)
+    checkpointer = None
+    try:
+        async with AsyncPostgresSaver.from_conn_string(SUPABASE_DB_URL) as cp:
+            checkpointer = cp
+            await cache_manager.initialize(checkpointer)
+    except Exception as e:
+        print(f"Warning: Could not connect to PostgreSQL checkpointer: {e}")
+        print("Running without conversation checkpointing...")
+        await cache_manager.initialize(None)
 
-        # Setup LangSmith observability
-        os.environ.setdefault("LANGSMITH_TRACING", os.getenv("LANGSMITH_TRACING", "true"))
-        os.environ.setdefault("LANGSMITH_PROJECT", os.getenv("LANGSMITH_PROJECT", "rag-book-production"))
+    # Setup LangSmith observability
+    os.environ.setdefault("LANGSMITH_TRACING", os.getenv("LANGSMITH_TRACING", "true"))
+    os.environ.setdefault("LANGSMITH_PROJECT", os.getenv("LANGSMITH_PROJECT", "rag-book-production"))
 
-        yield  # FastAPI siap jalan
+    yield  # FastAPI siap jalan
 
 app = FastAPI(lifespan=lifespan)
 app.state.limiter = limiter
