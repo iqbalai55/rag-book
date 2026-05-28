@@ -14,8 +14,14 @@ from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from core.rag.qdrant.qdrant_db import QdrantDB
 
-from core.prompts.general_rag import BOOK_QA_SYSTEM_PROMPT, MCQ_PROMPT, ESSAY_QUESTION_PROMPT
+from core.schemas.expertise import ExpertiseDetection
 from core.schemas.question import MCQResponse, EssayResponse
+from core.prompts.expertise import (
+    EXPERTISE_DETECTION_PROMPT,
+    get_system_prompt,
+    get_mcq_prompt,
+    get_essay_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +44,18 @@ class BookQdrantAgent:
         self.llm = get_chat_model(callbacks=[self.token_callback])
         self.checkpointer = checkpointer if checkpointer is not None else InMemorySaver()
 
+        # Detect expertise from book content
+        self.expertise = self._detect_expertise()
+        logger.info(
+            f"Detected expertise for '{course_id}': {self.expertise.domain} - "
+            f"{self.expertise.sub_fields}"
+        )
+
+        # Generate dynamic prompts based on expertise
+        self.system_prompt = get_system_prompt(self.expertise)
+        self.mcq_prompt_template = get_mcq_prompt(self.expertise)
+        self.essay_prompt_template = get_essay_prompt(self.expertise)
+
         @tool("search_book_context", description="Search relevant book context", response_format="content_and_artifact")
         def search_book_context(question: str) -> Tuple[str, List[Document]]:
             self.token_callback.set_context(feature="search")
@@ -56,7 +74,7 @@ class BookQdrantAgent:
             if not context:
                 return {"error": "Tidak ditemukan konteks relevan dari buku."}
 
-            prompt = MCQ_PROMPT.format(
+            prompt = self.mcq_prompt_template.format(
                 topic=topic,
                 num_questions=num_questions,
                 difficulty=difficulty,
@@ -82,7 +100,7 @@ class BookQdrantAgent:
             if not context:
                 return {"error": "Tidak ditemukan konteks relevan dari buku."}
 
-            prompt = ESSAY_QUESTION_PROMPT.format(
+            prompt = self.essay_prompt_template.format(
                 topic=topic,
                 num_questions=num_questions,
                 difficulty=difficulty,
@@ -98,7 +116,7 @@ class BookQdrantAgent:
 
         self.agent = create_agent(
             model=self.llm,
-            system_prompt=BOOK_QA_SYSTEM_PROMPT,
+            system_prompt=self.system_prompt,
             checkpointer=self.checkpointer,
             tools=[search_book_context, generate_mcq, generate_essay_questions],
             middleware=[
@@ -114,6 +132,38 @@ class BookQdrantAgent:
                 ),
             ],
         )
+
+    def _detect_expertise(self) -> ExpertiseDetection:
+        """Detect book domain from content samples."""
+        docs = self.qdrant_db.get_all_by_course(self.course_id, limit=5)
+
+        if not docs:
+            return ExpertiseDetection(
+                domain="Umum",
+                sub_fields=[],
+                expertise_prompt="tutor ahli yang menguasai materi dalam course ini",
+                book_type="unknown",
+            )
+
+        context = "\n".join([d.page_content[:500] for d in docs])[:3000]
+
+        llm = get_chat_model()
+        structured_llm = llm.with_structured_output(ExpertiseDetection)
+        prompt = EXPERTISE_DETECTION_PROMPT.format(
+            context=context, topik=self.course_id
+        )
+
+        try:
+            result = structured_llm.invoke(prompt)
+            return result
+        except Exception as e:
+            logger.warning(f"Expertise detection failed: {e}, using fallback")
+            return ExpertiseDetection(
+                domain="Umum",
+                sub_fields=[],
+                expertise_prompt="tutor ahli yang menguasai materi dalam course ini",
+                book_type="unknown",
+            )
 
     def _retrieve_context(self, topic: str) -> Tuple[str, List[Document], List[str]]:
         """Shared retrieval logic used by all tools (multitenant-safe)."""
