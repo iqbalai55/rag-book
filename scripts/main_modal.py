@@ -10,6 +10,16 @@ from core.schemas.chat import ChatPayload
 from core.utils.ingest_book import ingest_book
 from core.utils.cache_manager import CacheManager
 from core.storage.supabase_storage import SupabaseStorage
+from core.utils.llm_config import get_chat_model
+from core.schemas.mindmap import MindmapResponse
+from core.schemas.chapter import ChapterIdentification
+from core.schemas.question import MCQResponse, EssayResponse
+from core.prompts.mindmap import MINDMAP_FROM_CONTENT_PROMPT
+from core.prompts.general_rag import (
+    MCQ_PROMPT,
+    ESSAY_QUESTION_PROMPT,
+    CHAPTER_IDENTIFICATION_PROMPT,
+)
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langchain_huggingface import HuggingFaceEmbeddings
 import torch
@@ -28,6 +38,7 @@ secret = modal.Secret.from_dict({
     "LLM_MODEL": os.getenv("LLM_MODEL"),
     "HUGGINGFACEHUB_API_TOKEN": os.getenv("HUGGINGFACEHUB_API_TOKEN"),
     "OPENROUTER_API_KEY": os.getenv("OPENROUTER_API_KEY"),
+    "MINIMAX_API_KEY": os.getenv("MINIMAX_API_KEY"),
     "SUPABASE_DB_URL": os.getenv("SUPABASE_DB_URL"),
     "API_KEY": os.getenv("API_KEY"),
     "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
@@ -200,5 +211,138 @@ def fastapi_app():
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
+
+    # ---------------- MINDMAP ----------------
+    @web_app.post("/book-qa/mindmap", dependencies=[Depends(verify_api_key)])
+    @limiter.limit("5/minute")
+    async def generate_mindmap(request: Request, course_id: str):
+        try:
+            qdrant_db = await cache_manager.get_qdrant_db()
+            docs = qdrant_db.get_all_by_course(course_id)
+
+            if not docs:
+                raise HTTPException(
+                    status_code=404, detail="No content found for this course"
+                )
+
+            context = "\n\n".join([d.page_content for d in docs])[:15000]
+
+            llm = get_chat_model()
+            structured_llm = llm.with_structured_output(MindmapResponse)
+            prompt = MINDMAP_FROM_CONTENT_PROMPT.format(
+                context=context, topik=course_id
+            )
+            result = structured_llm.invoke(prompt)
+
+            return JSONResponse({
+                "course_id": course_id,
+                "title": result.title,
+                "mermaid": result.mermaid,
+                "sources": result.sources,
+            })
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)},
+                status_code=500
+            )
+
+    # ---------------- DATASET ----------------
+    @web_app.post("/book-qa/dataset", dependencies=[Depends(verify_api_key)])
+    @limiter.limit("2/minute")
+    async def generate_dataset(
+        request: Request,
+        course_id: str,
+        difficulty: str = "medium",
+        num_mcq: int = 3,
+        num_essay: int = 2,
+    ):
+        try:
+            qdrant_db = await cache_manager.get_qdrant_db()
+            docs = qdrant_db.get_all_by_course(course_id)
+
+            if not docs:
+                raise HTTPException(
+                    status_code=404, detail="No content found for this course"
+                )
+
+            context = "\n\n".join([d.page_content for d in docs])[:15000]
+
+            llm = get_chat_model()
+
+            # Step 1: Identify chapters from content
+            chapter_llm = llm.with_structured_output(ChapterIdentification)
+            chapter_prompt = CHAPTER_IDENTIFICATION_PROMPT.format(
+                context=context, topik=course_id
+            )
+            chapter_result = chapter_llm.invoke(chapter_prompt)
+            chapters = chapter_result.chapters
+
+            if not chapters:
+                raise HTTPException(
+                    status_code=404, detail="Could not identify chapters from content"
+                )
+
+            # Step 2: Generate questions for each chapter
+            dataset = {
+                "course_id": course_id,
+                "difficulty": difficulty,
+                "total_chapters": len(chapters),
+                "chapters": [],
+            }
+
+            for chapter_title in chapters:
+                chapter_docs = qdrant_db.query(chapter_title, course_id=course_id, k=3)
+                chapter_context = "\n\n".join([d.page_content for d in chapter_docs])[:8000]
+
+                if not chapter_context:
+                    continue
+
+                # Generate MCQ
+                mcq_llm = llm.with_structured_output(MCQResponse)
+                mcq_prompt = MCQ_PROMPT.format(
+                    topic=chapter_title,
+                    difficulty=difficulty,
+                    num_questions=num_mcq,
+                    context=chapter_context,
+                )
+                mcq_result = mcq_llm.invoke(mcq_prompt)
+
+                # Generate Essay
+                essay_llm = llm.with_structured_output(EssayResponse)
+                essay_prompt = ESSAY_QUESTION_PROMPT.format(
+                    topic=chapter_title,
+                    difficulty=difficulty,
+                    num_questions=num_essay,
+                    context=chapter_context,
+                )
+                essay_result = essay_llm.invoke(essay_prompt)
+
+                # Collect sources
+                sources = []
+                for doc in chapter_docs:
+                    source = doc.metadata.get("source", "unknown")
+                    pages = doc.metadata.get("pages", [])
+                    pages_str = ", ".join(map(str, pages))
+                    sources.append(f"{source} (hal {pages_str})")
+
+                dataset["chapters"].append({
+                    "chapter_title": chapter_title,
+                    "sources": list(set(sources)),
+                    "mcq": mcq_result.model_dump(),
+                    "essay": essay_result.model_dump(),
+                })
+
+            return JSONResponse(dataset)
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)},
+                status_code=500
+            )
 
     return web_app

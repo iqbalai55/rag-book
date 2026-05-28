@@ -8,6 +8,14 @@ Multi-tenant RAG system for querying book content with source citations. Ask que
   - Answer questions with book sources and page citations
   - Generate multiple choice and essay questions from book content
   - Generate podcast audio from book topics (Indonesian language)
+  - Generate mindmap from book content (Mermaid format)
+  - Generate dataset (MCQ + Essay) per chapter
+
+- **Dynamic Expertise Detection**
+  - AI automatically adapts persona based on book domain
+  - Detects domain (Software Engineering, History, Biology, etc.)
+  - Identifies sub-fields (code quality, refactoring, clean architecture, etc.)
+  - Prompts use appropriate terminology for each domain
 
 - **Persistence & Caching**
   - Save conversation threads to Supabase/PostgreSQL
@@ -112,6 +120,7 @@ Required variables:
 - `OPENAI_API_KEY` - OpenAI API key
 - `ANTHROPIC_API_KEY` - Anthropic API key
 - `OPENROUTER_API_KEY` - OpenRouter API key
+- `MINIMAX_API_KEY` - MiniMax API key (optional, for MiniMax provider)
 - `QDRANT_ENDPOINT` - Qdrant Cloud endpoint
 - `QDRANT_API_KEY` - Qdrant API key
 - `SUPABASE_URL` - Supabase project URL
