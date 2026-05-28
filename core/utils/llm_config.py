@@ -64,6 +64,20 @@ def get_chat_model(
             callbacks=callbacks,
         )
 
+    elif provider == "minimax":
+        api_key = os.getenv("MINIMAX_API_KEY")
+        if not api_key:
+            raise ValueError("MINIMAX_API_KEY is required for MiniMax provider")
+
+        return ChatAnthropic(
+            model=model,
+            api_key=api_key,
+            base_url="https://api.minimax.io/anthropic",
+            temperature=0.1,
+            max_tokens=4000,
+            callbacks=callbacks,
+        )
+
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
