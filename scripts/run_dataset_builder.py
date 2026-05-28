@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 from qdrant_client import QdrantClient
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from core.rag.qdrant.qdrant_db import QdrantDB
+from core.rag.qdrant_db import QdrantDB
 from core.dataset.dataset_builder import BenchmarkDatasetBuilder
 
 load_dotenv()

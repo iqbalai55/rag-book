@@ -2,8 +2,8 @@ import os
 import logging
 from typing import Optional, Dict
 
-from core.rag.qdrant.document_processor import DocumentProcessor
-from core.rag.qdrant.qdrant_db import QdrantDB
+from core.rag.document_processor import DocumentProcessor
+from core.rag.qdrant_db import QdrantDB
 
 from transformers import AutoTokenizer
 from docling.chunking import HybridChunker

@@ -8,9 +8,9 @@ class TOCDetection(BaseModel):
 
 
 class TOCChapter(BaseModel):
-    number: Optional[str] = Field(description="Chapter number (e.g., '1', '2.3')")
+    number: Optional[str] = Field(default=None, description="Chapter number (e.g., '1', '2.3')")
     title: str = Field(description="Chapter or section title")
-    page: Optional[int] = Field(description="Page number")
+    page: Optional[int] = Field(default=None, description="Page number")
     subsections: List["TOCChapter"] = Field(default=[], description="Nested subsections")
 
 
