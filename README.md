@@ -191,11 +191,34 @@ curl -N http://localhost:8001/book-qa/stream \
 ### Ingest Book via API
 
 ```bash
-# Course A
 curl -X POST "http://localhost:8001/book-qa/ingest?course_id=ai_basics" \
   -H "x-api-key: your_api_key" \
   -F "file=@book.pdf"
 ```
+
+### Generate Mindmap
+
+```bash
+curl -X POST "http://localhost:8001/book-qa/mindmap?course_id=software_design" \
+  -H "x-api-key: your_api_key"
+```
+
+Returns Mermaid mindmap syntax from all ingested content.
+
+### Generate Dataset (MCQ + Essay per Chapter)
+
+```bash
+curl -X POST "http://localhost:8001/book-qa/dataset?course_id=software_design&difficulty=medium&num_mcq=3&num_essay=2" \
+  -H "x-api-key: your_api_key"
+```
+
+Parameters:
+- `course_id` - Course identifier (required)
+- `difficulty` - easy, medium, hard (default: medium)
+- `num_mcq` - MCQ per chapter (default: 3)
+- `num_essay` - Essay per chapter (default: 2)
+
+Returns structured dataset with MCQ and Essay questions for each identified chapter.
 
 ## Testing
 

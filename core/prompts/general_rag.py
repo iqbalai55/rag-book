@@ -111,3 +111,21 @@ Contoh minimal JSON yang diharapkan:
   "sources": ["source1", "source2"]
 }}
 """
+
+CHAPTER_IDENTIFICATION_PROMPT = """
+Anda adalah ahli analisis dokumen. Identifikasibab-bab utama dari konten buku berikut.
+
+Aturan:
+1. Identifikasi 4-10 bab/ topik utama
+2. Judul bab harus ringkas (max 10 kata)
+3. Pastikan setiap bab memiliki cukup konteks untuk membuat soal
+4. Gunakan Bahasa Indonesia
+5. Urutkan sesuai urutan dalam buku
+
+KONTEN:
+{context}
+
+Topik Buku: {topik}
+
+Return: chapters=["Judul Bab 1", "Judul Bab 2", ...]
+"""
