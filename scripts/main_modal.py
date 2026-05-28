@@ -9,6 +9,7 @@ import uuid
 from core.schemas.chat import ChatPayload
 from core.utils.ingest_book import ingest_book
 from core.utils.cache_manager import CacheManager
+from core.storage.supabase_storage import SupabaseStorage
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langchain_huggingface import HuggingFaceEmbeddings
 import torch
@@ -33,6 +34,9 @@ secret = modal.Secret.from_dict({
     "OPENAI_MODEL": os.getenv("OPENAI_MODEL"),
     "QDRANT_ENDPOINT": os.getenv("QDRANT_ENDPOINT"),
     "QDRANT_API_KEY": os.getenv("QDRANT_API_KEY"),
+    "SUPABASE_URL": os.getenv("SUPABASE_URL"),
+    "SUPABASE_SERVICE_KEY": os.getenv("SUPABASE_SERVICE_KEY"),
+    "SUPABASE_STORAGE_BUCKET": os.getenv("SUPABASE_STORAGE_BUCKET"),
     "LANGSMITH_API_KEY": os.getenv("LANGSMITH_API_KEY"),
     "LANGSMITH_TRACING": os.getenv("LANGSMITH_TRACING"),
     "LANGSMITH_PROJECT": os.getenv("LANGSMITH_PROJECT")
@@ -60,6 +64,10 @@ cache_manager = CacheManager(
     qdrant_client=qdrant_client,
     embedding_model=embedding_model
 )
+
+# ---------------- SUPABASE STORAGE ----------------
+supabase_storage = SupabaseStorage()
+
 # ---------------- API KEY ----------------
 api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
 async def verify_api_key(api_key: str = Security(api_key_header)):
@@ -85,6 +93,7 @@ image = (
     .add_local_python_source("core/utils")
     .add_local_python_source("agents")
     .add_local_python_source("core/rag")
+    .add_local_python_source("core/storage")
     .add_local_python_source("core/tts")
     .add_local_python_source("core/prompts")
     .add_local_python_source("core/utils")
@@ -155,13 +164,21 @@ def fastapi_app():
             with open(tmp_path, "wb") as f:
                 f.write(await file.read())
 
+            # Upload PDF to Supabase Storage
+            storage_url = supabase_storage.upload_pdf(
+                file_path=tmp_path,
+                course_id=course_id,
+                filename=file.filename,
+            )
+
             qdrant_db = await cache_manager.get_qdrant_db()
 
             ingest_book(
                 pdf_path=tmp_path,
                 qdrant_db=qdrant_db,
                 course_id=course_id,
-                embed_model_id=EMBED_MODEL_ID
+                embed_model_id=EMBED_MODEL_ID,
+                extra_metadata={"storage_url": storage_url},
             )
 
             embedding_cache_volume.commit()
@@ -170,7 +187,8 @@ def fastapi_app():
                 "status": "success",
                 "collection": "lms_content",
                 "course_id": course_id,
-                "message": f"{file.filename} ingested"
+                "storage_url": storage_url,
+                "message": f"{file.filename} ingested and stored"
             })
 
         except Exception as e:

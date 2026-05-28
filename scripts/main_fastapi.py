@@ -19,6 +19,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from core.utils.ingest_book import ingest_book
 from core.utils.cache_manager import CacheManager
+from core.storage.supabase_storage import SupabaseStorage
 
 import torch
 
@@ -48,6 +49,9 @@ embedding_model = HuggingFaceEmbeddings(
 
 # ---------------- CACHE MANAGER ----------------
 cache_manager = CacheManager(qdrant_client, embedding_model=embedding_model)
+
+# ---------------- SUPABASE STORAGE ----------------
+supabase_storage = SupabaseStorage()
 
 # ------------------ LIFESPAN ------------------
 @asynccontextmanager
@@ -104,15 +108,23 @@ async def ingest_pdf(
         with open(tmp_path, "wb") as f:
             f.write(await file.read())
 
+        # Upload PDF to Supabase Storage
+        storage_url = supabase_storage.upload_pdf(
+            file_path=tmp_path,
+            course_id=course_id,
+            filename=file.filename,
+        )
+
         # ✅ ALWAYS use single collection
         qdrant_db = await cache_manager.get_qdrant_db()
 
-        # ✅ pass course_id into ingestion
+        # ✅ pass course_id + storage_url into ingestion
         ingest_book(
             pdf_path=tmp_path,
             qdrant_db=qdrant_db,
-            course_id=course_id,  # 🔥 key change
+            course_id=course_id,
             embed_model_id=EMBED_MODEL_ID,
+            extra_metadata={"storage_url": storage_url},
         )
 
         os.remove(tmp_path)
@@ -121,7 +133,8 @@ async def ingest_pdf(
             "status": "success",
             "collection": "lms_content",
             "course_id": course_id,
-            "message": f"{file.filename} ingested"
+            "storage_url": storage_url,
+            "message": f"{file.filename} ingested and stored"
         })
 
     except Exception as e:

@@ -4,6 +4,8 @@ from typing import Tuple, List
 from langchain.tools import tool
 
 from core.utils.llm_config import get_chat_model
+from core.utils.token_callback import TokenUsageCallbackHandler
+from core.utils.token_tracker import TokenTracker
 from langchain_core.documents import Document
 from langchain.agents import create_agent
 from langchain.agents.middleware import SummarizationMiddleware
@@ -22,16 +24,23 @@ class BookQdrantAgent:
     """Book Agent that uses QdrantDB for RAG retrieval."""
 
     def __init__(self, qdrant_db: QdrantDB, course_id: str, checkpointer=None, k: int = 3):
-        self.llm = get_chat_model()
         self.qdrant_db = qdrant_db
         self.k = k
-
         self.course_id = course_id
 
+        # Token tracking callback
+        self.token_callback = TokenUsageCallbackHandler(
+            course_id=course_id,
+            feature="agent_reasoning",
+        )
+        self.token_tracker = TokenTracker()
+
+        self.llm = get_chat_model(callbacks=[self.token_callback])
         self.checkpointer = checkpointer if checkpointer is not None else InMemorySaver()
 
         @tool("search_book_context", description="Search relevant book context", response_format="content_and_artifact")
         def search_book_context(question: str) -> Tuple[str, List[Document]]:
+            self.token_callback.set_context(feature="search")
             merged_context, retrieved_docs, _ = self._retrieve_context(question)
             return merged_context, retrieved_docs
 
@@ -41,6 +50,7 @@ class BookQdrantAgent:
             num_questions: int = 5,
             difficulty: str = "medium"
         ) -> dict:
+            self.token_callback.set_context(feature="generate_mcq")
             context, _, unique_sources = self._retrieve_context(topic)
 
             if not context:
@@ -66,6 +76,7 @@ class BookQdrantAgent:
             num_questions: int = 3,
             difficulty: str = "medium"
         ) -> dict:
+            self.token_callback.set_context(feature="generate_essay")
             context, _, unique_sources = self._retrieve_context(topic)
 
             if not context:
@@ -142,10 +153,16 @@ class BookQdrantAgent:
 
             source = doc.metadata.get("source", "unknown")
             pages = doc.metadata.get("pages", [])
+            storage_url = doc.metadata.get("storage_url", "")
             pages_str = ", ".join(map(str, pages)) if pages else "-"
 
+            # Build page-specific URL for LLM reference
+            page_url = ""
+            if storage_url and pages:
+                page_url = f"{storage_url}#page={pages[0]}"
+
             merged_context.append(
-                f"(Source: {source}, Pages: {pages_str})\n"
+                f"(Source: {source}, Pages: {pages_str}, URL: {page_url})\n"
                 f"Content:\n{text}"
             )
 

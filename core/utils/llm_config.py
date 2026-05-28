@@ -1,7 +1,8 @@
 import os
 from dotenv import load_dotenv
-from typing import Optional
+from typing import Optional, List
 
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 
@@ -13,7 +14,8 @@ DEFAULT_MODEL = os.getenv("LLM_MODEL", "gpt-5-nano")
 def get_chat_model(
     provider: str = DEFAULT_PROVIDER,
     model: str = DEFAULT_MODEL,
-    enable_caching: bool = True
+    enable_caching: bool = True,
+    callbacks: Optional[List[BaseCallbackHandler]] = None,
 ):
     provider = provider.lower()
 
@@ -27,6 +29,7 @@ def get_chat_model(
             api_key=api_key, 
             temperature=0.1,
             max_tokens=4000,
+            callbacks=callbacks,
         )
 
     elif provider in ["anthropic", "claude"]:
@@ -44,6 +47,7 @@ def get_chat_model(
             temperature=0.1,
             max_tokens=4000,
             model_kwargs=model_kwargs,
+            callbacks=callbacks,
         )
 
     elif provider == "openrouter":
@@ -57,6 +61,7 @@ def get_chat_model(
             base_url="https://openrouter.ai/api/v1",
             temperature=0.1,
             max_tokens=4000,
+            callbacks=callbacks,
         )
 
     else:
