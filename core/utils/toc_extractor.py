@@ -1,43 +1,46 @@
-from utils.llm_config import get_chat_model
-from schemas.toc import TOCDetection, PageIndexDetection
-from typing import List
+import logging
+import time
+from typing import List, Optional
+
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions
 
+from core.utils.llm_config import get_chat_model
+from core.schemas.toc import TOCDetection, TOCContent, TOCChapter
+
+logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 3
+RETRY_DELAY = 1.0
+
+
 def load_document(pdf_path: str, max_pages: int = 10):
-    """Loads PDF using Docling with EasyOCR enabled."""
-    
-    # You can specify languages here, e.g., lang=["en"]
-    ocr_options = EasyOcrOptions() 
-    
+    """Load PDF using Docling with EasyOCR enabled."""
+    ocr_options = EasyOcrOptions()
+
     pipeline_options = PdfPipelineOptions()
     pipeline_options.do_ocr = True
     pipeline_options.ocr_options = ocr_options
-    
+
     converter = DocumentConverter(
         format_options={
             InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
         }
     )
 
-    result = converter.convert(
-        pdf_path, 
-        page_range=(1, max_pages) 
-    )
-
+    result = converter.convert(pdf_path, page_range=(1, max_pages))
     return result.document
+
+
 def extract_pages(doc) -> List[str]:
-    """Correctly extracts text per page using Docling's provenance data."""
-    # doc.pages is a dict mapping page_no (int) to page objects
+    """Extract text per page using Docling provenance data."""
     page_numbers = sorted(doc.pages.keys())
     if not page_numbers:
         return []
 
-    # Initialize storage for each page found
     pages_content = {no: "" for no in page_numbers}
 
-    # Iterate items in reading order
     for item, _level in doc.iterate_items():
         if hasattr(item, "text") and item.prov:
             pno = item.prov[0].page_no
@@ -46,95 +49,135 @@ def extract_pages(doc) -> List[str]:
 
     return [pages_content[no].strip() for no in page_numbers]
 
+
+def _invoke_with_retry(structured_llm, prompt: str, max_retries: int = MAX_RETRIES):
+    """Invoke LLM with retry logic."""
+    for attempt in range(max_retries):
+        try:
+            return structured_llm.invoke(prompt)
+        except Exception as e:
+            logger.warning(
+                f"LLM call failed (attempt {attempt + 1}/{max_retries}): {e}"
+            )
+            if attempt < max_retries - 1:
+                time.sleep(RETRY_DELAY * (attempt + 1))
+    return None
+
+
 def llm_detect_toc(text: str, llm) -> bool:
-    structured_llm = llm.with_structured_output(TOCDetection)
-
-    prompt = f"""
-    You are an expert document analyzer. Determine if the following text is part of a "Table of Contents" (TOC).
-
-    ### GUIDELINES:
-    1. POSITIVE SIGNS:
-       - Presence of the words "Contents", "Table of Contents", "Sect ion", or "Chapter".
-       - A list of topics followed by page numbers (often Roman numerals like 'xi' or integers like '1', '29', '75').
-       - Hierarchical numbering like '1.1', '2.3.4'.
-       - IMPORTANT: Text might have extra spaces between letters (e.g., 'Co m ple x it y' instead of 'Complexity'). Ignore these spaces.
-
-    2. NEGATIVE SIGNS (Not a TOC):
-       - Legal text, copyright info, or "Library of Congress" data (this is a Copyright page).
-       - Acknowledgments or Prefaces that don't list other chapters.
-       - Random book titles or author names without page mappings.
-
-    ### TEXT TO ANALYZE:
-    {text}
-
-    ### FINAL TASK:
-    Is this page a Table of Contents? Answer with is_toc=True or False.
-    """
-    try:
-        response = structured_llm.invoke(prompt)
-        return response.is_toc
-    except Exception as e:
-        print(f"Error: {e}")
+    """Detect if a page contains a Table of Contents."""
+    if not text or len(text.strip()) < 20:
         return False
 
+    structured_llm = llm.with_structured_output(TOCDetection)
+
+    prompt = """Analyze if this page is a Table of Contents (TOC).
+
+POSITIVE SIGNS:
+- Words like "Contents", "Table of Contents", "Chapter", "Section"
+- Topics followed by page numbers (Roman numerals or integers)
+- Hierarchical numbering (1.1, 2.3.4)
+- Fix OCR spacing errors (e.g., 'Co m ple x ity' -> 'Complexity')
+
+NEGATIVE SIGNS:
+- Copyright pages, acknowledgments, prefaces without chapter lists
+- Random titles without page mappings
+
+TEXT:
+{text}
+
+Answer: is_toc=True or is_toc=False""".format(
+        text=text[:3000]
+    )
+
+    result = _invoke_with_retry(structured_llm, prompt)
+    return result.is_toc if result else False
+
+
 def find_toc_pages(pages: List[str], llm) -> List[int]:
+    """Find all TOC pages with gap tolerance."""
     toc_indices = []
-    # Allow for up to 1 "non-TOC" page to occur between TOC pages 
-    # (e.g. a blank page or an illustration)
-    max_gap = 1 
+    max_gap = 1
     gap_counter = 0
 
+    logger.info(f"Scanning {len(pages)} pages for TOC...")
+
     for i, page_text in enumerate(pages):
-        if not page_text.strip(): continue
-        
+        if not page_text.strip():
+            continue
+
         is_toc = llm_detect_toc(page_text, llm)
-        
+
         if is_toc:
             toc_indices.append(i)
-            gap_counter = 0 # Reset gap if we find another TOC page
+            gap_counter = 0
+            logger.debug(f"Page {i + 1}: TOC detected")
         elif toc_indices:
             gap_counter += 1
             if gap_counter > max_gap:
-                break # Only stop if we've seen too many non-TOC pages in a row
-                
+                break
+
+    logger.info(f"Found {len(toc_indices)} TOC pages: {toc_indices}")
     return toc_indices
 
+
 def extract_toc_content(pages: List[str], llm, toc_indices: List[int]) -> str:
+    """Extract and clean TOC text from detected pages."""
     if not toc_indices:
         return ""
 
-    toc_raw = "\n".join([pages[idx] for idx in toc_indices])
-    
-    # Use a schema that expects a content string
-    structured_llm = llm.with_structured_output(TOCDetection) 
+    toc_raw = "\n\n".join([pages[idx] for idx in toc_indices])
 
-    prompt = f"""
-    Clean and format the following Table of Contents. 
-    1. Fix OCR spacing errors (e.g., 'Cla ss' -> 'Class').
-    2. Maintain the hierarchy (Chapter -> Section).
-    3. Ensure page numbers are preserved.
+    structured_llm = llm.with_structured_output(TOCContent)
 
-    Text:
-    {toc_raw}
-    """
-    try:
-        response = structured_llm.invoke(prompt)
-        # Make sure your TOCDetection schema actually has a 'toc_content' field!
-        return response.toc_content 
-    except Exception as e:
-        print(f"Extraction Error: {e}")
-        return ""
+    prompt = """Clean and format this Table of Contents:
+1. Fix OCR spacing errors
+2. Maintain hierarchy (Chapter -> Section)
+3. Preserve page numbers
+4. Return cleaned text
+
+RAW TOC:
+{text}
+
+Return: toc_text=<cleaned text>""".format(
+        text=toc_raw[:5000]
+    )
+
+    result = _invoke_with_retry(structured_llm, prompt)
+    return result.toc_text if result else toc_raw
+
+
+def parse_toc_to_chapters(toc_text: str, llm) -> List[TOCChapter]:
+    """Parse cleaned TOC into structured chapter objects."""
+    if not toc_text:
+        return []
+
+    structured_llm = llm.with_structured_output(TOCContent)
+
+    prompt = """Parse this Table of Contents into structured chapters.
+
+TOC TEXT:
+{text}
+
+Return chapters with: number, title, page, subsections""".format(
+        text=toc_text[:5000]
+    )
+
+    result = _invoke_with_retry(structured_llm, prompt)
+    return result.chapters if result else []
+
 
 def detect_page_index(toc_text: str, llm) -> bool:
-    """Checks if the cleaned TOC actually contains page numbers."""
+    """Check if TOC contains page numbers."""
     if not toc_text:
         return False
-        
+
+    from core.schemas.toc import PageIndexDetection
+
     structured_llm = llm.with_structured_output(PageIndexDetection)
-    prompt = f"Does this Table of Contents contain page numbers?\n\n{toc_text}"
-    
-    try:
-        response = structured_llm.invoke(prompt)
-        return response.page_index_given_in_toc
-    except Exception:
-        return False
+
+    prompt = "Does this TOC contain page numbers?\n\n{text}".format(
+        text=toc_text[:2000]
+    )
+    result = _invoke_with_retry(structured_llm, prompt)
+    return result.page_index_given_in_toc if result else False

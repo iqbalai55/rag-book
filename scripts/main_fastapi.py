@@ -20,6 +20,9 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from core.utils.ingest_book import ingest_book
 from core.utils.cache_manager import CacheManager
 from core.storage.supabase_storage import SupabaseStorage
+from core.utils.llm_config import get_chat_model
+from core.schemas.mindmap import MindmapResponse
+from core.prompts.mindmap import MINDMAP_FROM_CONTENT_PROMPT
 
 import torch
 
@@ -137,6 +140,43 @@ async def ingest_pdf(
             "message": f"{file.filename} ingested and stored"
         })
 
+    except Exception as e:
+        return JSONResponse(
+            {"status": "error", "message": str(e)},
+            status_code=500
+        )
+
+# ------------------ MINDMAP ENDPOINT ------------------
+@app.post("/book-qa/mindmap", dependencies=[Depends(verify_api_key)])
+@limiter.limit("5/minute")
+async def generate_mindmap(request: Request, course_id: str):
+    try:
+        qdrant_db = await cache_manager.get_qdrant_db()
+        docs = qdrant_db.get_all_by_course(course_id)
+
+        if not docs:
+            raise HTTPException(
+                status_code=404, detail="No content found for this course"
+            )
+
+        context = "\n\n".join([d.page_content for d in docs])[:15000]
+
+        llm = get_chat_model()
+        structured_llm = llm.with_structured_output(MindmapResponse)
+        prompt = MINDMAP_FROM_CONTENT_PROMPT.format(
+            context=context, topik=course_id
+        )
+        result = structured_llm.invoke(prompt)
+
+        return JSONResponse({
+            "course_id": course_id,
+            "title": result.title,
+            "mermaid": result.mermaid,
+            "sources": result.sources,
+        })
+
+    except HTTPException:
+        raise
     except Exception as e:
         return JSONResponse(
             {"status": "error", "message": str(e)},

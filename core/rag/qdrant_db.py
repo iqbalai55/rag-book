@@ -167,6 +167,47 @@ class QdrantDB:
         return results
 
     # -------------------------
+    # RETRIEVE ALL BY COURSE
+    # -------------------------
+
+    def get_all_by_course(self, course_id: str, limit: int = 100) -> List[Document]:
+        """Retrieve ALL chunks for a course using scroll API."""
+        all_docs = []
+        offset = None
+
+        while True:
+            results, offset = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="metadata.course_id",
+                            match=MatchValue(value=course_id),
+                        )
+                    ]
+                ),
+                with_payload=True,
+                with_vectors=False,
+                offset=offset,
+                limit=limit,
+            )
+
+            for point in results:
+                payload = point.payload
+                all_docs.append(
+                    Document(
+                        page_content=payload.get("page_content", ""),
+                        metadata=payload.get("metadata", {}),
+                    )
+                )
+
+            if offset is None:
+                break
+
+        logger.info(f"Retrieved {len(all_docs)} chunks for course: {course_id}")
+        return all_docs
+
+    # -------------------------
     # DELETE
     # -------------------------
 
