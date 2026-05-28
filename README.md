@@ -13,9 +13,15 @@ Multi-tenant RAG system for querying book content with source citations. Ask que
   - Save conversation threads to Supabase/PostgreSQL
   - Cache QdrantDB, QdrantClient, and Agents
 
+- **Supabase Integration**
+  - PDF storage in Supabase Storage (book-pdfs bucket)
+  - Token usage tracking with cost estimation
+  - PostgreSQL-based conversation checkpointing
+
 - **Observability**
   - LangSmith integration for production tracing
   - MLflow for benchmarking (embedding, LLM models)
+  - Token usage analytics per feature, model, and course
 
 - **Deployment**
   - FastAPI for local development
@@ -27,7 +33,7 @@ Multi-tenant RAG system for querying book content with source citations. Ask que
 
 - **LangChain/LangGraph** - Agent framework
 - **Qdrant** - Vector database
-- **Supabase/PostgreSQL** - Conversation checkpoint storage
+- **Supabase** - Storage, PostgreSQL, Auth
 - **LangSmith** - Production observability
 - **MLflow** - Benchmarking
 - **FastAPI** - Local API server
@@ -50,12 +56,14 @@ rag-book/
 │   ├── evaluator/            # Evaluators & scorers
 │   ├── prompts/              # Prompt templates
 │   ├── rag/                  # RAG services (Qdrant)
-│   ├── schemas/             # Pydantic models
-│   ├── tts/                 # Text-to-speech
-│   └── utils/               # Utilities
+│   ├── schemas/              # Pydantic models
+│   ├── storage/              # Supabase Storage
+│   ├── tts/                  # Text-to-speech
+│   └── utils/                # Utilities (token tracking, etc.)
 ├── benchmarking/              # Performance benchmarks
 ├── test/                      # Test suite
 ├── book/                      # PDF sources
+├── scripts/migrations/        # SQL migrations
 └── requirements/              # Dependencies
 ```
 
@@ -106,7 +114,11 @@ Required variables:
 - `OPENROUTER_API_KEY` - OpenRouter API key
 - `QDRANT_ENDPOINT` - Qdrant Cloud endpoint
 - `QDRANT_API_KEY` - Qdrant API key
+- `SUPABASE_URL` - Supabase project URL
+- `SUPABASE_ANON_KEY` - Supabase anonymous key
+- `SUPABASE_SERVICE_KEY` - Supabase service role key
 - `SUPABASE_DB_URL` - Supabase PostgreSQL connection string
+- `SUPABASE_STORAGE_BUCKET` - Storage bucket name (default: book-pdfs)
 - `LANGSMITH_API_KEY` - LangSmith API key (for production tracing)
 
 ## Usage
@@ -117,6 +129,11 @@ Required variables:
 python scripts/main_fastapi.py
 # Then use the ingest endpoint (see API section below)
 ```
+
+Books are automatically:
+1. Uploaded to Supabase Storage (`book-pdfs` bucket)
+2. Chunked and indexed in Qdrant
+3. Metadata includes `storage_url` for source citations
 
 ### Run FastAPI Server (Local)
 
@@ -204,6 +221,28 @@ pytest --cov=./ --cov-report=html
 - `test/test_tts_engine.py` - Tests for TTS engine
 
 ## Observability
+
+### Token Usage Tracking
+
+Token usage is automatically tracked and stored in PostgreSQL (`token_usage` table):
+- **Features tracked**: agent_reasoning, search, generate_mcq, generate_essay, podcast
+- **Metrics**: input/output tokens, estimated cost (USD), latency
+- **Aggregation**: In-memory by feature, model, and course
+- **Persistence**: Batched writes to PostgreSQL (buffer size: 10)
+
+Query usage data via `TokenTracker`:
+```python
+from core.utils.token_tracker import TokenTracker
+
+tracker = TokenTracker()
+
+# Get in-memory summary
+summary = tracker.get_summary()
+
+# Query database
+usage = await tracker.query_usage(course_id="my_course")
+daily = await tracker.query_daily_usage(days=7)
+```
 
 ### Production (LangSmith)
 
