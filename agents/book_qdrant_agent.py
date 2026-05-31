@@ -82,7 +82,27 @@ class BookQdrantAgent:
             )
 
             structured_llm = self.llm.with_structured_output(MCQResponse)
-            result: MCQResponse = structured_llm.invoke(prompt)
+            raw = structured_llm.invoke(prompt)
+
+            try:
+                if isinstance(raw, str):
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, str):
+                        parsed = json.loads(parsed)
+                    if isinstance(parsed, dict) and isinstance(parsed.get("questions"), str):
+                        parsed["questions"] = json.loads(parsed["questions"])
+                    result = MCQResponse(**parsed)
+                elif isinstance(raw, MCQResponse):
+                    result = raw
+                elif isinstance(raw, dict):
+                    if isinstance(raw.get("questions"), str):
+                        raw["questions"] = json.loads(raw["questions"])
+                    result = MCQResponse(**raw)
+                else:
+                    return {"error": f"Tipe response tidak dikenal: {type(raw)}"}
+            except Exception as e:
+                return {"error": f"Gagal parse response MCQ: {e}"}
+
             result.topic = topic
             result.difficulty = difficulty
             result.sources = unique_sources[:5]
@@ -108,7 +128,27 @@ class BookQdrantAgent:
             )
 
             structured_llm = self.llm.with_structured_output(EssayResponse)
-            result: EssayResponse = structured_llm.invoke(prompt)
+            raw = structured_llm.invoke(prompt)
+
+            try:
+                if isinstance(raw, str):
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, str):
+                        parsed = json.loads(parsed)
+                    if isinstance(parsed, dict) and isinstance(parsed.get("questions"), str):
+                        parsed["questions"] = json.loads(parsed["questions"])
+                    result = EssayResponse(**parsed)
+                elif isinstance(raw, EssayResponse):
+                    result = raw
+                elif isinstance(raw, dict):
+                    if isinstance(raw.get("questions"), str):
+                        raw["questions"] = json.loads(raw["questions"])
+                    result = EssayResponse(**raw)
+                else:
+                    return {"error": f"Tipe response tidak dikenal: {type(raw)}"}
+            except Exception as e:
+                return {"error": f"Gagal parse response Essay: {e}"}
+
             result.topic = topic
             result.difficulty = difficulty
             result.sources = unique_sources[:5]
@@ -223,7 +263,10 @@ class BookQdrantAgent:
 
     def ask(self, query: str, session_id: str = "book_thread"):
         config = {"configurable": {"thread_id": session_id}}
-
+        
+        # Update token callback with session context
+        self.token_callback.set_context(session_id=session_id, feature="agent_reasoning")
+        
         for event in self.agent.stream(
             {"messages": [{"role": "user", "content": query}]},
             config=config,
@@ -242,6 +285,9 @@ class BookQdrantAgent:
             - metadata bawaan message
         """
         config = {"configurable": {"thread_id": session_id}}
+        
+        # Update token callback with session context
+        self.token_callback.set_context(session_id=session_id, feature="agent_reasoning")
         
         tool_question_generated = False  
 

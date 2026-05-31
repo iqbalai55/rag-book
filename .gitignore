@@ -64,3 +64,5 @@ qdrant_storage
 uploads/
 
 tmp*
+
+.kilo/

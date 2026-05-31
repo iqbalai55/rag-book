@@ -58,7 +58,7 @@ def get_chat_model(
         return ChatOpenAI(
             model=model,
             api_key=api_key, 
-            base_url="https://openrouter.ai/api/v1",
+            base_url="https://lb.jatevo.ai/v1",
             temperature=0.1,
             max_tokens=4000,
             callbacks=callbacks,

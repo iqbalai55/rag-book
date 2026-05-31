@@ -1,207 +1,344 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-04-21
+**Analysis Date:** 2026-05-30
 
-## Tech Debt
+## Critical Security Issues
 
-**[Event Loop Policy]:**
-- Issue: Commented out assertion for Windows event loop policy in main_fastapi.py
-- Files: `main_fastapi.py:57`
-- Impact: Potential asyncio event loop issues on Windows systems
-- Fix approach: Uncomment and fix the event loop policy assertion, or remove if not needed
+### Exposed Secrets in .env File
 
-**[Database Setup]:**
-- Issue: Commented out checkpointer setup line in main_fastapi.py
-- Files: `main_fastapi.py:61`
-- Impact: Database checkpointer may not be properly initialized
-- Fix approach: Uncomment and ensure proper async setup of checkpointer
+**Severity: CRITICAL**
 
-**[Filename Typo]:**
-- Issue: Misspelled filename "chace_manager.py" instead of "cache_manager.py"
-- Files: `utils/chace_manager.py`
-- Impact: Confusion and potential import issues
-- Fix approach: Rename file to `cache_manager.py` and update all imports
+The `.env` file is tracked in git history (not in `.gitignore`) and contains multiple live API keys and credentials:
 
-**[Hardcoded Paths]:**
-- Issue: Multiple hardcoded storage paths throughout codebase
-- Files: 
-  - `main_fastapi.py:36, 38` (STORAGE_PATH, MLRUNS_PATH)
-  - `main_modal.py:34-36` (QDRANT_PATH, MLFLOW_PATH, HF_CACHE_PATH)
-  - `ingest_book.py:81, 89` (qdrant_client path, pdf_path)
-- Impact: Reduces portability and makes environment-specific configuration difficult
-- Fix approach: Move all paths to environment variables or config file
+- `OPENAI_API_KEY` - Full production key at line 9
+- `OPENROUTER_API_KEY` - Full production key at line 11
+- `MINIMAX_API_KEY` - Full production key at line 12
+- `HUGGINGFACEHUB_API_TOKEN` - Full token at line 14
+- `SUPABASE_SERVICE_KEY` - Full JWT at line 21
+- `QDRANT_API_KEY` - Full JWT at line 26
+- `LANGSMITH_API_KEY` - Full key at line 30
 
-**[Debug Mode in Production]:**
-- Issue: debug=True flag in uvicorn server configuration
-- Files: `main_fastapi.py:143, 148`
-- Impact: Exposes sensitive information and reduces performance in production
-- Fix approach: Make debug mode configurable via environment variable
+**Files affected:**
+- `.env` (lines 9-32)
 
-## Known Bugs
+**Impact:** If this repo is public or access is compromised, all external service credentials are exposed. Attackers could:
+- Use all LLM providers at victim's expense
+- Access Supabase database (read/write)
+- Access Qdrant vector database
+- View all LangSmith traces
 
-**[API Key Verification Inconsistency]:**
-- Symptoms: Different API key verification approaches between main_fastapi.py and main_modal.py
-- Files: 
-  - `main_fastapi.py:77-81` (uses global API_KEY variable)
-  - `main_modal.py:52-55` (uses os.environ.get("API_KEY") directly)
-- Impact: Inconsistent authentication behavior between deployment modes
-- Trigger: Deploying the application in different modes (local vs Modal)
-- Workaround: Ensure both files use the same API key verification method
+**Fix:** Remove `.env` from git tracking, use `.gitignore`, and never commit live credentials.
 
-**[Rate Limit Inconsistency Risk]:**
-- Symptoms: Rate limits defined in multiple places with potential for drift
-- Files: 
-  - `main_fastapi.py:85, 103` (streaming: 10/min, ingest: 3/min)
-  - `main_modal.py:123, 136` (streaming: 10/min, ingest: 3/min)
-- Impact: Rate limits may become inconsistent between deployment modes
-- Trigger: Updates to rate limits in one file but not the other
-- Workaround: Centralize rate limit configuration
+---
 
-## Security Considerations
+### Hardcoded API Key Validation
 
-**[API Key Exposure]:**
-- Risk: API keys loaded from environment but potentially exposed in logs or error messages
-- Files: Multiple files using API_KEY from environment
-- Current mitigation: API key header verification
-- Recommendations: 
-  - Ensure API keys are never logged
-  - Consider using API key hashing for storage comparison
-  - Implement rate limiting on authentication failures
+**Severity: HIGH**
 
-**[CORS Configuration Missing]:**
-- Risk: No CORS configuration visible in FastAPI applications
-- Files: `main_fastapi.py`, `main_modal.py`
-- Current mitigation: None visible
-- Recommendations: Add appropriate CORS middleware based on deployment requirements
+In `scripts/main_fastapi.py` (line 121-124) and `scripts/main_modal.py` (line 86-89):
 
-**[Database Connection String in Logs]:**
-- Risk: Database connection strings might appear in error logs or exceptions
-- Files: Files using SUPABASE_DB_URL environment variable
-- Current mitigation: None visible
-- Recommendations: 
-  - Catch and sanitize database connection errors
-  - Avoid logging full connection strings
-  - Use connection pooling with proper error handling
+```python
+async def verify_api_key(api_key: str = Security(api_key_header)):
+    if api_key != API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid or missing API Key")
+```
 
-## Performance Bottlenecks
+The `API_KEY` is compared using direct string equality (`!=`). This is vulnerable to timing attacks. Should use `secrets.compare_digest()` or equivalent constant-time comparison.
 
-**[Single Collection Bottleneck]:**
-- Problem: All courses stored in single Qdrant collection ("lms_content")
-- Files: 
-  - `utils/chace_manager.py:26` (_collection_name = "lms_content")
-  - `services/rag/qdrant/qdrant_db.py:29` (collection_name parameter)
-  - `main_fastapi.py:117` (hardcoded "lms_content")
-- Cause: Architectural decision to use single collection with course_id filtering
-- Improvement path: 
-  - Evaluate performance with large number of courses
-  - Consider sharding or separate collections for high-volume courses
-  - Add course-specific indexing strategies
+**Files affected:**
+- `scripts/main_fastapi.py` (line 121-124)
+- `scripts/main_modal.py` (line 86-89)
 
-**[Embedding Model Loading]:**
-- Problem: Embedding model loaded multiple times in different contexts
-- Files: 
-  - `main_fastapi.py:42-46`
-  - `main_modal.py:40-45` 
-  - `ingest_book.py:76-79`
-- Cause: No shared embedding model singleton
-- Improvement path: Create shared embedding model service or singleton
+**Fix:** Use `hmac.compare_digest(api_key, API_KEY)` for constant-time comparison.
 
-## Fragile Areas
+---
 
-**[Configuration Management]:**
-- Files: Multiple files with load_dotenv() calls
-- Why fragile: Environment loading scattered throughout codebase
-- Safe modification: Centralize environment loading in one location
-- Test coverage: Gaps in configuration validation testing
+### CORS Wildcard Allowing Credentials
 
-**[Rate Limiting Configuration]:**
-- Files: Rate limits defined in main_fastapi.py and main_modal.py
-- Why fragile: Duplicate configuration that can diverge
-- Safe modification: Create centralized rate limiting configuration
-- Test coverage: Limited testing of rate limit boundaries
+**Severity: MEDIUM**
 
-**[Path Handling]:**
-- Files: Various file path operations (tmp files, storage paths)
-- Why fragile: Hardcoded and relative paths may behave differently across environments
-- Safe modification: Use pathlib or os.path.join for cross-platform compatibility
-- Test coverage: Missing tests for path resolution in different environments
+In `scripts/main_fastapi.py` (line 101-107):
 
-## Scaling Limits
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
 
-**[Qdrant Single Instance]:**
-- Current capacity: Single Qdrant instance on local filesystem or volume
-- Limit: Disk space, memory, and Qdrant performance limits
-- Scaling path: 
-  - Move to managed Qdrant service or cluster
-  - Implement backup and disaster recovery procedures
-  - Add monitoring for storage and performance metrics
+While origins are restricted to `localhost:3000`, the combination of `allow_credentials=True` with `allow_methods=["*"]` is risky. If the allowed origin list ever expands or is misconfigured, credentials could be sent to untrusted origins.
 
-**[Modal Scaling Constraints]:**
-- Current capacity: Limited by Modal volume sizes and GPU allocation
-- Limit: Modal-specific constraints on storage volumes and compute
-- Scaling path: 
-  - Evaluate Modal plan limits
-  - Consider hybrid approach with external services
-  - Implement autoscaling policies where available
+**Files affected:**
+- `scripts/main_fastapi.py` (line 101-107)
 
-## Dependencies at Risk
+---
 
-**[LangGraph Postgres Checkpointer]:**
-- Risk: Dependency on langgraph-checkpoint-postgres which may have breaking changes
-- Impact: Database checkpointing functionality could break
-- Migration plan: 
-  - Pin to specific version in requirements
-  - Monitor changelog for breaking changes
-  - Abstract checkpointing interface for easier migration
+## Technical Debt
 
-**[Document Processing Libraries]:**
-- Risk: Dependencies on docling, transformers for PDF processing
-- Impact: PDF ingestion pipeline could break with library updates
-- Migration plan: 
-  - Version pinning and regular dependency audits
-  - Consider abstraction layer for document processing
-  - Maintain fallback processing options
+### Agent Memory Leak in CacheManager
 
-## Missing Critical Features
+**Severity: HIGH**
 
-**[Health Check Endpoints]:**
-- Problem: No health check or readiness endpoints for monitoring
-- Blocks: Proper deployment orchestration and monitoring
-- 
-**[Comprehensive Error Handling]:**
-- Problem: Limited error handling visible in endpoint functions
-- Blocks: Production reliability and debugging capability
-- 
-**[Authentication Audit Logging]:**
-- Problem: No logging of authentication attempts or failures
-- Blocks: Security monitoring and incident response
-- 
-**[Request/Response Logging]:**
-- Problem: Limited visibility into API requests and responses
-- Blocks: Debugging and performance analysis
+In `core/utils/cache_manager.py`, agents are cached indefinitely:
 
-## Test Coverage Gaps
+```python
+self._agents[course_id] = BookQdrantAgent(...)
+```
 
-**[Error Scenario Testing]:**
-- What's not tested: Error handling in API endpoints, database failures, invalid inputs
-- Files: test/ directory shows some tests but limited error case coverage
-- Risk: Production failures not caught by testing
-- Priority: High
+Each `BookQdrantAgent` holds:
+- LLM instance with callbacks
+- Token usage handler
+- Checkpointer reference
+-检索 state
 
-**[Authentication Boundary Testing]:**
-- What's not tested: Invalid API keys, missing headers, rate limit exceeded scenarios
-- Files: test/ directory - need to verify auth test coverage
-- Risk: Security vulnerabilities in authentication
-- Priority: High
+Under high tenant churn, this creates unbounded memory growth. No eviction policy exists.
 
-**[Multitenancy Edge Cases]:**
-- What's not tested: Cross-course data leakage, invalid course IDs, permission boundaries
-- Files: Course-specific functionality in cache manager and agents
-- Risk: Data isolation failures between tenants
-- Priority: High
+**Files affected:**
+- `core/utils/cache_manager.py` (lines 49-63)
 
-**[External Service Failure]:**
-- What's not tested: Qdrant unavailable, Supabase down, embedding service failures
-- Files: Integration points with external services
-- Risk: Cascading failures in production
-- Priority: Medium
+**Fix:** Implement LRU eviction or time-based expiration for agents.
+
+---
+
+### Token Tracker Singleton with Global State
+
+**Severity: MEDIUM**
+
+`TokenTracker` in `core/utils/token_tracker.py` uses singleton pattern with `_instance` class variable. This pattern:
+- Makes testing difficult (global state persists across tests)
+- Creates implicit coupling between modules
+- In-memory aggregation (`_totals`, `_by_feature`, `_by_model`) never expires
+
+The in-memory state grows indefinitely during runtime. No mechanism to clear or prune old aggregations.
+
+**Files affected:**
+- `core/utils/token_tracker.py` (lines 46-84)
+
+---
+
+### In-Memory Checkpointer Fallback
+
+**Severity: MEDIUM**
+
+In `scripts/main_fastapi.py` (line 45):
+
+```python
+self.checkpointer = checkpointer if checkpointer is not None else InMemorySaver()
+```
+
+If Supabase checkpointer fails to initialize (lines 75-88), the system silently falls back to `InMemorySaver`. This means:
+- Checkpoints are lost on restart
+- No cross-instance continuity
+- Sessions reset after service restart
+
+No warning is emitted to operators.
+
+**Files affected:**
+- `scripts/main_fastapi.py` (lines 74-90)
+- `scripts/main_modal.py` (lines 123-142)
+
+---
+
+## Operational Concerns
+
+### No Database Migration Management
+
+**Severity: MEDIUM**
+
+The `token_tracker.py` assumes a `token_usage` table exists but there's no migration management. Schema is defined inline in SQL (lines 174-194) but:
+- No version control for schema
+- No migration scripts in repository
+- No validation that table exists before inserting
+
+**Files affected:**
+- `core/utils/token_tracker.py` (lines 174-194)
+
+---
+
+### Rate Limiting by IP Only
+
+**Severity: MEDIUM**
+
+In `scripts/main_fastapi.py` (line 43):
+
+```python
+limiter = Limiter(key_func=get_remote_address)
+```
+
+Rate limiting uses client IP only. In scenarios where:
+- Multiple users behind same NAT
+- API consumers behind shared proxy
+
+Legitimate users get rate limited unfairly.
+
+**Files affected:**
+- `scripts/main_fastapi.py` (line 43)
+
+---
+
+### Temporary File Upload Race Condition
+
+**Severity: LOW**
+
+In `scripts/main_fastapi.py` (lines 153-157):
+
+```python
+tmp_path = f"./{file.filename}"
+with open(tmp_path, "wb") as f:
+    f.write(await file.read())
+```
+
+If two users upload files with the same filename (e.g., "book.pdf"), the second upload overwrites the first while it's still being processed. No atomic naming or upload queuing.
+
+**Files affected:**
+- `scripts/main_fastapi.py` (lines 153-178)
+
+---
+
+### No Health Check Endpoint
+
+**Severity: LOW**
+
+The FastAPI application has no `/health` or `/ready` endpoint. Kubernetes/load balancers cannot determine if the service is healthy without making a real request (that consumes rate limit).
+
+**Files affected:**
+- `scripts/main_fastapi.py`
+- `scripts/main_modal.py`
+
+---
+
+## Performance Considerations
+
+### Unbounded Scroll Pagination in Qdrant
+
+**Severity: MEDIUM**
+
+In `core/rag/qdrant_db.py` (lines 173-208):
+
+```python
+while True:
+    results, offset = self.client.scroll(...)
+    ...
+    if offset is None:
+        break
+```
+
+The `get_all_by_course` method paginates through ALL documents for a course without limit. For courses with thousands of chunks, this:
+- Loads entire dataset into memory
+- Takes significant time
+- No streaming or cursor-based pagination to client
+
+**Files affected:**
+- `core/rag/qdrant_db.py` (lines 173-208)
+
+---
+
+### Synchronous File Operations in Async Endpoint
+
+**Severity: LOW**
+
+In `scripts/main_fastapi.py` (lines 156-157):
+
+```python
+with open(tmp_path, "wb") as f:
+    f.write(await file.read())
+```
+
+This uses synchronous file I/O in an async endpoint, blocking the event loop. Should use `aiofiles` or run in thread pool.
+
+**Files affected:**
+- `scripts/main_fastapi.py` (lines 156-157)
+
+---
+
+### Inefficient Double JSON Parsing
+
+**Severity: LOW**
+
+In `agents/book_qdrant_agent.py` (lines 88-94, 133-140):
+
+```python
+if isinstance(raw, str):
+    parsed = json.loads(raw)
+    if isinstance(parsed, str):
+        parsed = json.loads(parsed)
+```
+
+Multiple nested `json.loads()` calls when LLM already returns structured output via `with_structured_output()`. The parsing fallback is reasonable but could be optimized.
+
+**Files affected:**
+- `agents/book_qdrant_agent.py` (lines 88-104, 133-150)
+
+---
+
+## Missing Error Handling
+
+### Supabase Checkpointer Silent Failures
+
+**Severity: MEDIUM**
+
+In `scripts/supabase_checkpointer.py` (lines 58-61, 95-98, 174-176):
+
+```python
+try:
+    self.client.table("langgraph_checkpoints").upsert(row).execute()
+except Exception as e:
+    logger.error(f"put checkpoint error: {e}")
+```
+
+All exceptions are caught and only logged. No retry logic, no circuit breaker, no alerting. Checkpoint failures are silent.
+
+**Files affected:**
+- `scripts/supabase_checkpointer.py` (lines 36-69, 71-98, 100-176)
+
+---
+
+### No Schema Validation on Ingest
+
+**Severity: LOW**
+
+In `core/utils/ingest_book.py`, PDF ingestion assumes well-formed PDF. No validation that chunks meet minimum quality before indexing. Malformed PDFs could create garbage vector entries.
+
+**Files affected:**
+- `core/utils/ingest_book.py` (lines 37-66)
+
+---
+
+## Scalability Limitations
+
+### Single Collection for All Courses
+
+**Severity: MEDIUM**
+
+In `core/utils/cache_manager.py` (line 28):
+
+```python
+self._collection_name = "lms_content"
+```
+
+All courses share a single Qdrant collection with payload-based filtering. As tenant count grows:
+- Payload indexes grow
+- Filter queries become slower
+- No per-collection parallelism
+
+**Files affected:**
+- `core/utils/cache_manager.py` (line 28)
+
+---
+
+### No Connection Pooling for Supabase
+
+**Severity: LOW**
+
+In `core/storage/supabase_storage.py` and `core/utils/token_tracker.py`, new Supabase clients are created per operation. No connection pooling configured.
+
+**Files affected:**
+- `core/storage/supabase_storage.py` (line 28)
+- `core/utils/token_tracker.py` (line 170)
+
+---
+
+*Concerns audit: 2026-05-30*

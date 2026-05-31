@@ -1,4 +1,5 @@
 import os
+import json
 from contextlib import asynccontextmanager
 import modal
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Security, Request
@@ -10,17 +11,15 @@ from core.schemas.chat import ChatPayload
 from core.utils.ingest_book import ingest_book
 from core.utils.cache_manager import CacheManager
 from core.storage.supabase_storage import SupabaseStorage
+from core.utils.token_tracker import TokenTracker
 from core.utils.llm_config import get_chat_model
-from core.schemas.mindmap import MindmapResponse
-from core.schemas.chapter import ChapterIdentification
-from core.schemas.question import MCQResponse, EssayResponse
-from core.prompts.mindmap import MINDMAP_FROM_CONTENT_PROMPT
-from core.prompts.general_rag import (
-    MCQ_PROMPT,
-    ESSAY_QUESTION_PROMPT,
-    CHAPTER_IDENTIFICATION_PROMPT,
-)
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from core.services.dataset_generator import DatasetGenerator
+from core.services.summarize_book import BookSummarizer
+from core.services.mindmap_generator import MindmapGenerator
+from core.schemas.mindmap import MindmapEditRequest
+from core.schemas.summary import SummaryEditRequest
+from supabase import create_client
+from scripts.supabase_checkpointer import SupabaseCheckpointer
 from langchain_huggingface import HuggingFaceEmbeddings
 import torch
 from qdrant_client import QdrantClient
@@ -79,6 +78,9 @@ cache_manager = CacheManager(
 # ---------------- SUPABASE STORAGE ----------------
 supabase_storage = SupabaseStorage()
 
+# ---------------- TOKEN TRACKER ----------------
+token_tracker = TokenTracker()
+
 # ---------------- API KEY ----------------
 api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
 async def verify_api_key(api_key: str = Security(api_key_header)):
@@ -108,6 +110,7 @@ image = (
     .add_local_python_source("core/tts")
     .add_local_python_source("core/prompts")
     .add_local_python_source("core/utils")
+    .add_local_python_source("scripts/supabase_checkpointer")
 )
 
 qdrant_volume = modal.Volume.from_name("qdrant_storage_volume")
@@ -117,16 +120,26 @@ embedding_cache_volume = modal.Volume.from_name("hf_embedding_cache")
 # ---------------- FASTAPI LIFESPAN ----------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with AsyncPostgresSaver.from_conn_string( os.environ["SUPABASE_DB_URL"]) as checkpointer:
+    checkpointer = None
+    try:
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
+        if supabase_url and supabase_key:
+            client = create_client(supabase_url, supabase_key)
+            checkpointer = SupabaseCheckpointer(client)
+            print("Supabase REST checkpointer initialized")
+        else:
+            print("Warning: SUPABASE_URL or SUPABASE_SERVICE_KEY not set")
+    except Exception as e:
+        print(f"Warning: Could not initialize Supabase checkpointer: {e}")
 
-        #await checkpointer.setup()
-        await cache_manager.initialize(checkpointer)
+    await cache_manager.initialize(checkpointer)
 
-        # Setup LangSmith observability
-        os.environ.setdefault("LANGSMITH_TRACING", os.getenv("LANGSMITH_TRACING", "true"))
-        os.environ.setdefault("LANGSMITH_PROJECT", os.getenv("LANGSMITH_PROJECT", "rag-book-production"))
+    # Setup LangSmith observability
+    os.environ.setdefault("LANGSMITH_TRACING", os.getenv("LANGSMITH_TRACING", "true"))
+    os.environ.setdefault("LANGSMITH_PROJECT", os.getenv("LANGSMITH_PROJECT", "rag-book-production"))
 
-        yield
+    yield
 
 
 # ---------------- FASTAPI LIFESPAN ----------------
@@ -215,32 +228,39 @@ def fastapi_app():
     # ---------------- MINDMAP ----------------
     @web_app.post("/book-qa/mindmap", dependencies=[Depends(verify_api_key)])
     @limiter.limit("5/minute")
-    async def generate_mindmap(request: Request, course_id: str):
+    async def generate_mindmap(
+        request: Request,
+        course_id: str,
+        user_prompt: str | None = None,
+    ):
         try:
             qdrant_db = await cache_manager.get_qdrant_db()
-            docs = qdrant_db.get_all_by_course(course_id)
-
-            if not docs:
-                raise HTTPException(
-                    status_code=404, detail="No content found for this course"
-                )
-
-            context = "\n\n".join([d.page_content for d in docs])[:15000]
-
             llm = get_chat_model()
-            structured_llm = llm.with_structured_output(MindmapResponse)
-            prompt = MINDMAP_FROM_CONTENT_PROMPT.format(
-                context=context, topik=course_id
+            generator = MindmapGenerator(qdrant_db, llm)
+            result = await generator.generate(course_id, user_prompt=user_prompt)
+            return JSONResponse(result)
+        except HTTPException:
+            raise
+        except Exception as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)},
+                status_code=500
             )
-            result = structured_llm.invoke(prompt)
 
-            return JSONResponse({
-                "course_id": course_id,
-                "title": result.title,
-                "mermaid": result.mermaid,
-                "sources": result.sources,
-            })
-
+    # ---------------- MINDMAP EDIT ----------------
+    @web_app.post("/book-qa/mindmap/edit", dependencies=[Depends(verify_api_key)])
+    @limiter.limit("10/minute")
+    async def edit_mindmap(request: Request, body: MindmapEditRequest):
+        try:
+            qdrant_db = await cache_manager.get_qdrant_db()
+            llm = get_chat_model()
+            generator = MindmapGenerator(qdrant_db, llm)
+            result = await generator.edit(
+                course_id=body.course_id,
+                mermaid=body.mermaid,
+                instruction=body.instruction,
+            )
+            return JSONResponse(result)
         except HTTPException:
             raise
         except Exception as e:
@@ -261,84 +281,124 @@ def fastapi_app():
     ):
         try:
             qdrant_db = await cache_manager.get_qdrant_db()
-            docs = qdrant_db.get_all_by_course(course_id)
-
-            if not docs:
-                raise HTTPException(
-                    status_code=404, detail="No content found for this course"
-                )
-
-            context = "\n\n".join([d.page_content for d in docs])[:15000]
-
             llm = get_chat_model()
-
-            # Step 1: Identify chapters from content
-            chapter_llm = llm.with_structured_output(ChapterIdentification)
-            chapter_prompt = CHAPTER_IDENTIFICATION_PROMPT.format(
-                context=context, topik=course_id
-            )
-            chapter_result = chapter_llm.invoke(chapter_prompt)
-            chapters = chapter_result.chapters
-
-            if not chapters:
-                raise HTTPException(
-                    status_code=404, detail="Could not identify chapters from content"
-                )
-
-            # Step 2: Generate questions for each chapter
-            dataset = {
-                "course_id": course_id,
-                "difficulty": difficulty,
-                "total_chapters": len(chapters),
-                "chapters": [],
-            }
-
-            for chapter_title in chapters:
-                chapter_docs = qdrant_db.query(chapter_title, course_id=course_id, k=3)
-                chapter_context = "\n\n".join([d.page_content for d in chapter_docs])[:8000]
-
-                if not chapter_context:
-                    continue
-
-                # Generate MCQ
-                mcq_llm = llm.with_structured_output(MCQResponse)
-                mcq_prompt = MCQ_PROMPT.format(
-                    topic=chapter_title,
-                    difficulty=difficulty,
-                    num_questions=num_mcq,
-                    context=chapter_context,
-                )
-                mcq_result = mcq_llm.invoke(mcq_prompt)
-
-                # Generate Essay
-                essay_llm = llm.with_structured_output(EssayResponse)
-                essay_prompt = ESSAY_QUESTION_PROMPT.format(
-                    topic=chapter_title,
-                    difficulty=difficulty,
-                    num_questions=num_essay,
-                    context=chapter_context,
-                )
-                essay_result = essay_llm.invoke(essay_prompt)
-
-                # Collect sources
-                sources = []
-                for doc in chapter_docs:
-                    source = doc.metadata.get("source", "unknown")
-                    pages = doc.metadata.get("pages", [])
-                    pages_str = ", ".join(map(str, pages))
-                    sources.append(f"{source} (hal {pages_str})")
-
-                dataset["chapters"].append({
-                    "chapter_title": chapter_title,
-                    "sources": list(set(sources)),
-                    "mcq": mcq_result.model_dump(),
-                    "essay": essay_result.model_dump(),
-                })
-
-            return JSONResponse(dataset)
-
+            generator = DatasetGenerator(qdrant_db, llm)
+            result = await generator.generate(course_id, difficulty, num_mcq, num_essay)
+            return JSONResponse(result)
         except HTTPException:
             raise
+        except Exception as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)},
+                status_code=500
+            )
+
+    # ---------------- SUMMARIZE BOOK ----------------
+    @web_app.post("/book-qa/summarize", dependencies=[Depends(verify_api_key)])
+    @limiter.limit("2/minute")
+    async def summarize_book(
+        request: Request,
+        course_id: str,
+        user_prompt: str | None = None,
+    ):
+        """Summarize entire book using hierarchical map-reduce approach."""
+        try:
+            qdrant_db = await cache_manager.get_qdrant_db()
+            llm = get_chat_model()
+            summarizer = BookSummarizer(qdrant_db, llm)
+            result = await summarizer.summarize(course_id, user_prompt=user_prompt)
+            return JSONResponse(result)
+        except HTTPException:
+            raise
+        except Exception as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)},
+                status_code=500
+            )
+
+    # ---------------- SUMMARIZE EDIT ----------------
+    @web_app.post("/book-qa/summarize/edit", dependencies=[Depends(verify_api_key)])
+    @limiter.limit("10/minute")
+    async def edit_summary(request: Request, body: SummaryEditRequest):
+        """Edit existing summary based on user instructions."""
+        try:
+            qdrant_db = await cache_manager.get_qdrant_db()
+            llm = get_chat_model()
+            summarizer = BookSummarizer(qdrant_db, llm)
+            result = await summarizer.edit(
+                course_id=body.course_id,
+                title=body.title,
+                overview=body.overview,
+                key_themes=body.key_themes,
+                chapters=[c.model_dump() for c in body.chapters],
+                instruction=body.instruction,
+            )
+            return JSONResponse(result)
+        except HTTPException:
+            raise
+        except Exception as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)},
+                status_code=500
+            )
+
+    # ---------------- TOKEN USAGE ----------------
+    @web_app.get("/token-usage", dependencies=[Depends(verify_api_key)])
+    @limiter.limit("30/minute")
+    async def get_token_usage(
+        request: Request,
+        course_id: str,
+        session_id: str | None = None,
+        feature: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ):
+        """Query token usage statistics."""
+        try:
+            in_memory_summary = token_tracker.get_summary()
+            db_usage = await token_tracker.query_usage(
+                course_id=course_id,
+                session_id=session_id,
+                feature=feature,
+                from_date=from_date,
+                to_date=to_date,
+            )
+            return JSONResponse({
+                "in_memory": in_memory_summary,
+                "database": db_usage,
+            })
+        except Exception as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)},
+                status_code=500
+            )
+
+    @web_app.get("/token-usage/daily", dependencies=[Depends(verify_api_key)])
+    @limiter.limit("30/minute")
+    async def get_daily_token_usage(
+        request: Request,
+        course_id: str,
+        days: int = 7,
+    ):
+        """Query daily token usage aggregation."""
+        try:
+            daily_usage = await token_tracker.query_daily_usage(
+                course_id=course_id,
+                days=days,
+            )
+            return JSONResponse({"daily_usage": daily_usage})
+        except Exception as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)},
+                status_code=500
+            )
+
+    @web_app.post("/token-usage/flush", dependencies=[Depends(verify_api_key)])
+    async def flush_token_usage():
+        """Manually flush buffered token usage records to DB."""
+        try:
+            await token_tracker.flush()
+            return JSONResponse({"status": "flushed"})
         except Exception as e:
             return JSONResponse(
                 {"status": "error", "message": str(e)},
