@@ -56,6 +56,7 @@ ATURAN PENTING:
 3. Penjelasan jawaban maksimal 2 kalimat.
 4. Fokus menguji pemahaman konsep, jangan copy-paste langsung dari konteks.
 5. Output HARUS valid JSON sesuai schema MCQResponse, tanpa field tambahan.
+6. PASTIKAN setiap question object memiliki field "question" (teks pertanyaan).
 
 Contoh minimal JSON yang diharapkan:
 {{
@@ -63,15 +64,15 @@ Contoh minimal JSON yang diharapkan:
   "difficulty": "medium",
   "questions": [
     {{
-      "question": "string",
+      "question": "Apa itu clean architecture?",
       "options": [
-        {{"label": "A", "text": "string"}},
-        {{"label": "B", "text": "string"}},
-        {{"label": "C", "text": "string"}},
-        {{"label": "D", "text": "string"}}
+        {{"label": "A", "text": "Arsitektur fisik bangunan"}},
+        {{"label": "B", "text": "Pola desain software"}},
+        {{"label": "C", "text": "Bahasa pemrograman"}},
+        {{"label": "D", "text": "Framework testing"}}
       ],
-      "correct_answer": "A",
-      "explanation": "string"
+      "correct_answer": "B",
+      "explanation": "Clean architecture adalah pola desain software yang memisahkan concern."
     }}
   ],
   "sources": ["source1", "source2"]
