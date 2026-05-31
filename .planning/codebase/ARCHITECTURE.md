@@ -1,145 +1,133 @@
 # Architecture
 
-**Analysis Date:** 2026-04-21
+**Analysis Date:** 2026-05-30
 
 ## Pattern Overview
 
-**Overall:** Modular, Layered Architecture with Microservices-inspired Separation of Concerns
+**Overall:** Multi-tenant RAG (Retrieval Augmented Generation) system with LangGraph agents
 
 **Key Characteristics:**
-- Clear separation between API layer, service layer, and data access layer
-- Domain-driven design with bounded contexts (agents, services, schemas)
-- Event-driven data flow through LangGraph checkpointer pattern
-- Plugin-like agent architecture for extensible functionality
-- Multi-tenancy implemented at the data layer (QdrantDB with course_id filtering)
+- Multi-tenant architecture with course-level isolation via `course_id` payload filtering in Qdrant
+- LangGraph-based agents with tool execution for RAG, MCQ generation, essay generation, and podcast synthesis
+- Hierarchical map-reduce pattern for book-level operations (summarize, mindmap, dataset generation)
+- Streaming Server-Sent Events (SSE) for real-time agent responses
+- Supabase-backed durable checkpointing for conversation state persistence
 
 ## Layers
 
-**API Layer:**
-- Purpose: Handle HTTP requests/responses, authentication, rate limiting
-- Location: `main_fastapi.py`
-- Contains: FastAPI endpoints, middleware, dependency injection
-- Depends on: CacheManager, services layer
-- Used by: External clients (web, mobile, other services)
+**API Layer (FastAPI):**
+- Location: `scripts/main_fastapi.py`
+- Contains: REST endpoints for book ingestion, chat streaming, summarization, mindmap generation, dataset creation
+- Depends on: `CacheManager`, `SupabaseStorage`, `TokenTracker`, service classes
+- Used by: Frontend clients via HTTP/SSE
+
+**Agent Layer (LangGraph):**
+- Location: `agents/book_qdrant_agent.py`, `agents/book_podcast_agent.py`
+- Contains: `BookQdrantAgent` (RAG Q&A, MCQ, essay tools), `BookPodcastAgent` (extends with TTS)
+- Depends on: `QdrantDB`, `get_chat_model()`, prompt templates
+- Used by: FastAPI via `CacheManager.get_agent()`
+
+**Retrieval Layer (Qdrant):**
+- Location: `core/rag/qdrant_db.py`
+- Contains: `QdrantDB` - vector store wrapper with multitenant filtering
+- Depends on: `qdrant_client`, embedding model
+- Used by: Agents, services (summarize, mindmap, dataset)
+
+**Storage Layer (Supabase):**
+- Location: `core/storage/supabase_storage.py`, `scripts/supabase_checkpointer.py`
+- Contains: PDF file storage, LangGraph checkpoint persistence
+- Depends on: Supabase client
+- Used by: FastAPI (PDF upload), `CacheManager` (checkpointing)
 
 **Service Layer:**
-- Purpose: Business logic orchestration, external service integration
-- Location: `services/`, `agents/`, `utils/`
-- Contains: CacheManager, QdrantDB, BookQdrantAgent, LLM configuration
-- Depends on: Data Access Layer, external APIs (Qdrant, Supabase, HuggingFace)
-- Used by: API Layer
+- Location: `core/services/` (summarize_book.py, mindmap_generator.py, dataset_generator.py)
+- Contains: Business logic for summaries, mindmaps, MCQ/essay datasets
+- Depends on: `QdrantDB`, LLM, prompt templates
+- Used by: FastAPI endpoints
 
-**Data Access Layer:**
-- Purpose: Data persistence and retrieval abstraction
-- Location: `services/rag/qdrant/`
-- Contains: QdrantDB class with multitenant filtering
-- Depends on: Qdrant client, embedding models
-- Used by: Service Layer (agents, cache manager)
-
-**Domain Layer:**
-- Purpose: Data models, schemas, prompts
-- Location: `schemas/`, `prompts/`
-- Contains: Pydantic models, prompt templates, data transfer objects
-- Depends on: None (pure domain objects)
-- Used by: All layers
+**Document Processing Layer:**
+- Location: `core/rag/document_processor.py`, `core/utils/ingest_book.py`
+- Contains: PDF loading, chunking, metadata extraction
+- Depends on: `docling`, `pypdf`, `HybridChunker`
+- Used by: FastAPI `/ingest` endpoint
 
 ## Data Flow
 
-**Book QA Streaming Flow:**
-
-1. **Request Ingestion:** Client POST to `/book-qa/stream` with ChatPayload
-2. **Authentication:** API key verified via dependency injection
-3. **Agent Retrieval:** CacheManager returns course-specific BookQdrantAgent
-4. **Context Retrieval:** Agent uses QdrantDB to query relevant documents (filtered by course_id)
-5. **LLM Processing:** LangGraph agent processes query with retrieved context
-6. **Tool Execution:** Agent may invoke search/book tools based on query
-7. **Streaming Response:** Results streamed back as Server-Sent Events (SSE)
-8. **Checkpointing:** Conversation state saved via AsyncPostgresSaver
-
 **Book Ingestion Flow:**
+1. Client POSTs PDF to `/book-qa/ingest`
+2. `SupabaseStorage.upload_pdf()` stores PDF in Supabase Storage
+3. `ingest_book()` calls `DocumentProcessor.process_document()` to chunk PDF
+4. Chunks enriched with `course_id` are stored in Qdrant `lms_content` collection
 
-1. **Request Ingestion:** Client POST to `/book-qa/ingest` with PDF and course_id
-2. **Authentication:** API key verified
-3. **File Processing:** PDF saved temporarily, text extracted
-4. **Vector Storage:** Chunks added to Qdrant collection with course_id metadata
-5. **Cache Update:** QdrantDB reference updated in CacheManager
-6. **Response:** Success/error returned to client
+**Chat/QA Flow:**
+1. Client POSTs to `/book-qa/stream` with `course_id` and messages
+2. `CacheManager.get_agent(course_id)` returns or creates `BookQdrantAgent`
+3. Agent executes with `search_book_context` tool → `QdrantDB.query(course_id=...)`
+4. Response streamed via SSE with message types: `human`, `tool`, `internal`, `final`, `mcq`, `essay`, `error`
+5. `TokenUsageCallbackHandler` tracks token usage per feature/session
 
-**State Management:**
-- **Conversation State:** Managed by LangGraph checkpointer (PostgreSQL via Supabase)
-- **Application State:** CacheManager singleton holds shared resources (Qdrant client, DB, agents)
-- **Session State:** Passed via session_id in requests, stored in checkpointer
-- **Tenancy State:** course_id embedded in metadata for data isolation
+**Summary/Mindmap/Dataset Flow:**
+1. Client POSTs to respective endpoint with `course_id`
+2. Service retrieves all documents via `QdrantDB.get_all_by_course()`
+3. For summaries/datasets: chapter identification via LLM → per-chapter summarization → map-reduce to final
+4. For mindmaps: direct LLM generation from full context
 
 ## Key Abstractions
 
-**QdrantDB:**
-- Purpose: Multitenant vector database wrapper with automatic collection management
-- Examples: `services/rag/qdrant/qdrant_db.py`
-- Pattern: Wrapper pattern with dependency injection, automatic schema management
-
 **CacheManager:**
-- Purpose: Singleton managing shared resources and per-course agent instances
-- Examples: `utils/chace_manager.py`
-- Pattern: Factory pattern with lazy initialization, thread-safe singleton
+- Purpose: Singleton managing shared `QdrantDB` and per-course agent instances
+- Location: `core/utils/cache_manager.py`
+- Pattern: Async lazy initialization with lock
 
-**BookQdrantAgent:**
-- Purpose: Encapsulates RAG logic with tool-based question generation capabilities
-- Examples: `agents/book_qdrant_agent.py`
-- Pattern: Strategy pattern (tools), Middleware pattern (LangGraph middleware)
+**QdrantDB:**
+- Purpose: Multitenant vector store with `course_id` payload filtering
+- Location: `core/rag/qdrant_db.py`
+- Pattern: Wrapper around `QdrantVectorStore` with collection management
 
-**Message Payload:**
-- Purpose: Standardized communication contract between client and API
-- Examples: `schemas/chat.py`
-- Pattern: Data Transfer Object (DTO) with validation (Pydantic)
+**SupabaseCheckpointer:**
+- Purpose: Durable LangGraph checkpoint storage via Supabase REST API
+- Location: `scripts/supabase_checkpointer.py`
+- Pattern: Implements `BaseCheckpointSaver` interface
+
+**TokenTracker:**
+- Purpose: Track and persist token usage per course/session/feature
+- Location: `core/utils/token_tracker.py`
+- Pattern: In-memory buffering with async flush to database
 
 ## Entry Points
 
-**main.py:**
-- Location: `main.py`
-- Triggers: Direct execution (`python main.py`)
-- Responsibilities: Database schema setup (checkpointer initialization)
+**FastAPI Server:**
+- Location: `scripts/main_fastapi.py`
+- Triggers: `python scripts/main_fastapi.py` or `asyncio.run(main())`
+- Responsibilities: API routing, rate limiting, CORS, lifespan management (checkpointer init)
 
-**main_fastapi.py:**
-- Location: `main_fastapi.py`
-- Triggers: Uvicorn server startup
-- Responsibilities: 
-  - FastAPI application creation
-  - Lifespan management (resource initialization/cleanup)
-  - API route registration (/book-qa/stream, /book-qa/ingest)
-  - Middleware setup (rate limiting, authentication)
-  - External service connections (MLflow, embedding models)
+**Podcast Agent Runner:**
+- Location: `scripts/run_podcast_agent.py`
+- Triggers: Direct execution
+- Responsibilities: Standalone podcast generation
 
-**uvicorn Entry Point:**
-- Location: Implicit in main_fastapi.py line 143-148
-- Triggers: `uvicorn main_fastapi:app` command
-- Responsibilities: HTTP server binding and request handling
+**Dataset Builder Runner:**
+- Location: `scripts/run_dataset_builder.py`
+- Triggers: Direct execution
+- Responsibilities: Standalone dataset generation
 
 ## Error Handling
 
-**Strategy:** Centralized exception handling with hierarchical fallback
+**Strategy:** HTTPException for expected errors, JSON error responses for unexpected
 
 **Patterns:**
-- **API Layer:** FastAPI exception handlers for rate limits (429) and general exceptions (500)
-- **Service Layer:** Explicit try/catch blocks with logging and error propagation
-- **Data Layer:** Qdrant operations wrapped with try/catch, fallback to in-memory client
-- **Agent Layer:** Tool execution wrapped with error catchers returning user-friendly messages
+- 404: Content not found (course empty, no chapters identified)
+- 422: Validation errors (handled by FastAPI)
+- 429: Rate limit exceeded (via slowapi)
+- 500: Unexpected errors with message in response
 
-**Cross-Cutting Concerns:**
+## Cross-Cutting Concerns
 
-**Logging:** Standard Python logging module with module-specific loggers
-- Pattern: `logger = logging.getLogger(__name__)` in each module
-- Levels: DEBUG for development, INFO for production
-
-**Validation:** Pydantic models for request/response validation
-- Examples: ChatPayload, Message, MCQResponse, EssayResponse
-- Location: `schemas/` directory
-
-**Authentication:** API key header verification
-- Implementation: FastAPI Security dependency (`verify_api_key` function)
-- Location: main_fastapi.py lines 77-81
-- Header: `x-api-key`
+**Logging:** Python `logging` module with `__name__` loggers
+**Validation:** Pydantic schemas in `core/schemas/`
+**Authentication:** API key via `x-api-key` header, validated in `verify_api_key` dependency
+**Rate Limiting:** slowapi limiter with per-endpoint limits
 
 ---
 
-*Architecture analysis: 2026-04-21*
+*Architecture analysis: 2026-05-30*
