@@ -261,7 +261,31 @@ curl -X POST "http://localhost:8001/book-qa/ingest?book_id=ai_basics" \
   -F "file=@book.pdf"
 ```
 
-> **Note:** Ingest does NOT deduct credits (no LLM call).### Summarize Book
+> **Note:** Ingest does NOT deduct credits (no LLM call).
+
+### Re-ingest (Replace a Book)
+
+To replace a book's content with a new PDF, call `DELETE` first, then `POST` ingest. The server wraps both calls in a per-`book_id` lock so concurrent re-ingests for the same book serialise; different `book_id`s remain parallel.
+
+```bash
+# 1. Hard-delete all chunks + the Supabase Storage file for the book
+curl -X DELETE "http://localhost:8001/book-qa/book/ai_basics/chunks" \
+  -H "x-api-key: your_api_key"
+
+# 2. Upload the new PDF (will overwrite the Storage object via upsert)
+curl -X POST "http://localhost:8001/book-qa/ingest?book_id=ai_basics" \
+  -H "x-api-key: your_api_key" \
+  -F "file=@book-v2.pdf"
+```
+
+Optional `?filename=` query param on the DELETE removes a specific file under `{book_id}/`; omit it to remove all files for the book (M1: there's only one).
+
+- DELETE is idempotent (200 on missing book).
+- The Qdrant delete is the source of truth; the Storage delete is best-effort.
+- If ingest fails after delete, the book is briefly empty. Retry the full cascade; both endpoints are idempotent.
+- See `docs/adr/0001-book-domain-and-reingest.md` for the design rationale.
+
+### Summarize Book
 
 ```bash
 # Basic summary (requires user_id)
@@ -456,7 +480,7 @@ Query usage/credit data via API:
 
 ```bash
 # Token usage
-curl "http://localhost:8001/token-usage?book_id=my_course" -H "x-api-key: ..."
+curl "http://localhost:8001/token-usage?book_id=my_book" -H "x-api-key: ..."
 
 # User credits
 curl "http://localhost:8001/credits/{user_id}" -H "x-api-key: ..."
