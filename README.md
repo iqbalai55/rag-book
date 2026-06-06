@@ -13,6 +13,14 @@ Multi-tenant RAG system for querying book content with source citations. Ask que
   - **Summarize entire book** with hierarchical map-reduce approach (per-chapter + overview)
   - **Edit/revise summaries and mindmaps** based on user instructions
 
+- **Credit-Based Token Usage**
+  - Per-user credit balance tracking
+  - Automatic credit deduction before LLM operations
+  - Feature-based pricing (configurable costs per feature)
+  - Automatic refund on LLM failure
+  - Full transaction audit log
+  - Real-time balance checking via API
+
 - **User Customization**
   - Guide mindmap generation with custom prompts (e.g., "Focus on design patterns")
   - Guide summary generation with custom prompts (e.g., "More detail on technical aspects")
@@ -34,6 +42,7 @@ Multi-tenant RAG system for querying book content with source citations. Ask que
   - Source citations link directly to PDF pages
   - Token usage tracking with cost estimation
   - PostgreSQL-based conversation checkpointing
+  - **Credit-based billing** with per-user balance
 
 - **Observability**
   - LangSmith integration for production tracing
@@ -96,6 +105,7 @@ rag-book/
 │   └── utils/                # Utilities
 │       ├── token_tracker.py  # Token usage tracking
 │       ├── token_callback.py # LangChain callback for tokens
+│       ├── credit_manager.py # Credit-based billing
 │       └── cache_manager.py  # Agent & DB caching
 ├── benchmarking/              # Performance benchmarks
 ├── test/                      # Test suite
@@ -224,31 +234,48 @@ Arguments:
 curl -N http://localhost:8001/book-qa/stream \
   -H "Content-Type: application/json" \
   -H "x-api-key: your_api_key" \
-  -d '{"session_id":"session_1","course_id":"software_design","messages":[{"role":"user","content":"What is the basic principle of clean architecture?"}]}'
+  -d '{"user_id":"user_uuid","session_id":"session_1","book_id":"software_design","messages":[{"role":"user","content":"What is the basic principle of clean architecture?"}]}'
 ```
+
+> **Note:** `user_id` is required. Returns HTTP 402 if insufficient credits.
+
+### Credit Management
+
+```bash
+# Check balance and recent transactions
+curl "http://localhost:8001/credits/{user_id}" \
+  -H "x-api-key: your_api_key"
+
+# Add credits to user (admin)
+curl -X POST "http://localhost:8001/credits/{user_id}/add?amount=50&transaction_type=purchase" \
+  -H "x-api-key: your_api_key"
+```
+
+> **Feature costs:** search=0.001, generate_mcq=0.01, generate_essay=0.015, summarize=0.005, mindmap=0.02, dataset=0.025, agent_reasoning=0.005
 
 ### Ingest Book via API
 
 ```bash
-curl -X POST "http://localhost:8001/book-qa/ingest?course_id=ai_basics" \
+curl -X POST "http://localhost:8001/book-qa/ingest?book_id=ai_basics" \
   -H "x-api-key: your_api_key" \
   -F "file=@book.pdf"
 ```
 
-### Summarize Book
+> **Note:** Ingest does NOT deduct credits (no LLM call).### Summarize Book
 
 ```bash
-# Basic summary
-curl -X POST "http://localhost:8001/book-qa/summarize?course_id=software_design" \
+# Basic summary (requires user_id)
+curl -X POST "http://localhost:8001/book-qa/summarize?user_id=user_uuid&book_id=software_design" \
   -H "x-api-key: your_api_key"
 
 # With custom user prompt
-curl -X POST "http://localhost:8001/book-qa/summarize?course_id=software_design&user_prompt=Fokus+ke+aspek+teknikal" \
+curl -X POST "http://localhost:8001/book-qa/summarize?user_id=user_uuid&book_id=software_design&user_prompt=Fokus+ke+aspek+teknikal" \
   -H "x-api-key: your_api_key"
 ```
 
 Parameters:
-- `course_id` - Course identifier (required)
+- `user_id` - User identifier (required)
+- `book_id` - Book identifier (required)
 - `user_prompt` - Custom instructions for summary (optional)
 
 Returns hierarchical book summary with:
@@ -265,7 +292,8 @@ curl -X POST "http://localhost:8001/book-qa/summarize/edit" \
   -H "Content-Type: application/json" \
   -H "x-api-key: your_api_key" \
   -d '{
-    "course_id": "software_design",
+    "user_id": "user_uuid",
+    "book_id": "software_design",
     "title": "Ringkasan: Clean Architecture",
     "overview": "Buku ini membahas tentang...",
     "key_themes": ["Clean Code", "SOLID"],
@@ -275,7 +303,8 @@ curl -X POST "http://localhost:8001/book-qa/summarize/edit" \
 ```
 
 Parameters:
-- `course_id` - Course identifier (required)
+- `user_id` - User identifier (required)
+- `book_id` - Book identifier (required)
 - `title` - Current summary title (required)
 - `overview` - Current overview (required)
 - `key_themes` - Current key themes (required)
@@ -291,17 +320,18 @@ Example instructions:
 ### Generate Mindmap
 
 ```bash
-# Basic mindmap
-curl -X POST "http://localhost:8001/book-qa/mindmap?course_id=software_design" \
+# Basic mindmap (requires user_id)
+curl -X POST "http://localhost:8001/book-qa/mindmap?user_id=user_uuid&book_id=software_design" \
   -H "x-api-key: your_api_key"
 
 # With custom user prompt
-curl -X POST "http://localhost:8001/book-qa/mindmap?course_id=software_design&user_prompt=Fokus+ke+design+patterns" \
+curl -X POST "http://localhost:8001/book-qa/mindmap?user_id=user_uuid&book_id=software_design&user_prompt=Fokus+ke+design+patterns" \
   -H "x-api-key: your_api_key"
 ```
 
 Parameters:
-- `course_id` - Course identifier (required)
+- `user_id` - User identifier (required)
+- `book_id` - Book identifier (required)
 - `user_prompt` - Custom instructions for mindmap (optional)
 
 Returns Mermaid mindmap syntax from all ingested content.
@@ -313,14 +343,16 @@ curl -X POST "http://localhost:8001/book-qa/mindmap/edit" \
   -H "Content-Type: application/json" \
   -H "x-api-key: your_api_key" \
   -d '{
-    "course_id": "software_design",
+    "user_id": "user_uuid",
+    "book_id": "software_design",
     "mermaid": "mindmap\n  root((Clean Architecture))\n    Controller\n    Service",
     "instruction": "Tambah sub-branch untuk Repository pattern"
   }'
 ```
 
 Parameters:
-- `course_id` - Course identifier (required)
+- `user_id` - User identifier (required)
+- `book_id` - Book identifier (required)
 - `mermaid` - Existing mermaid mindmap to edit (required)
 - `instruction` - Edit instructions (required)
 
@@ -333,12 +365,14 @@ Example instructions:
 ### Generate Dataset (MCQ + Essay per Chapter)
 
 ```bash
-curl -X POST "http://localhost:8001/book-qa/dataset?course_id=software_design&difficulty=medium&num_mcq=3&num_essay=2" \
+# Requires user_id
+curl -X POST "http://localhost:8001/book-qa/dataset?user_id=user_uuid&book_id=software_design&difficulty=medium&num_mcq=3&num_essay=2" \
   -H "x-api-key: your_api_key"
 ```
 
 Parameters:
-- `course_id` - Course identifier (required)
+- `user_id` - User identifier (required)
+- `book_id` - Book identifier (required)
 - `difficulty` - easy, medium, hard (default: medium)
 - `num_mcq` - MCQ per chapter (default: 3)
 - `num_essay` - Essay per chapter (default: 2)
@@ -348,18 +382,34 @@ Returns structured dataset with MCQ and Essay questions for each identified chap
 ### Token Usage Tracking
 
 ```bash
-# Query token usage (course_id required)
-curl "http://localhost:8001/token-usage?course_id=software_design" \
+# Query token usage (book_id required)
+curl "http://localhost:8001/token-usage?book_id=software_design" \
   -H "x-api-key: your_api_key"
 
 # Daily aggregation
-curl "http://localhost:8001/token-usage/daily?course_id=software_design&days=30" \
+curl "http://localhost:8001/token-usage/daily?book_id=software_design&days=30" \
   -H "x-api-key: your_api_key"
 
 # Manual flush buffer to DB
 curl -X POST "http://localhost:8001/token-usage/flush" \
   -H "x-api-key: your_api_key"
 ```
+
+### Feature Credit Costs
+
+Credit cost per feature (deducted on each LLM call):
+
+| Feature | Cost (credits) | Description |
+|---------|----------------|-------------|
+| `search` | 0.001 | Book context search |
+| `generate_mcq` | 0.01 | Generate multiple choice questions |
+| `generate_essay` | 0.015 | Generate essay questions |
+| `summarize` | 0.005 | Book summarization |
+| `mindmap` | 0.02 | Mind map generation |
+| `dataset` | 0.025 | Full dataset generation |
+| `agent_reasoning` | 0.005 | Agent chat reasoning |
+
+New users start with **100 credits**. Credits are automatically deducted before each LLM operation. On failure, credits are refunded.
 
 ## Testing
 
@@ -386,26 +436,43 @@ pytest --cov=./ --cov-report=html
 
 ## Observability
 
-### Token Usage Tracking
+### Token Usage & Credit Tracking
 
-Token usage is automatically tracked and stored in PostgreSQL (`token_usage` table):
+Token usage and credits are automatically tracked:
+
+**Token tracking** (`token_usage` table in PostgreSQL):
 - **Features tracked**: agent_reasoning, search, generate_mcq, generate_essay, podcast, summarization
 - **Metrics**: input/output tokens, estimated cost (USD), latency
 - **Aggregation**: In-memory by feature, model, and course
 - **Persistence**: Batched writes to PostgreSQL (buffer size: 10)
 
-Query usage data via API or `TokenTracker`:
+**Credit tracking** (`credit_transactions` table):
+- Per-user balance in `profiles.credits_balance`
+- Full audit log of all credit transactions (burn, refund, purchase)
+- Automatic deduction before LLM operations
+- Automatic refund on failure
+
+Query usage/credit data via API:
+
+```bash
+# Token usage
+curl "http://localhost:8001/token-usage?book_id=my_course" -H "x-api-key: ..."
+
+# User credits
+curl "http://localhost:8001/credits/{user_id}" -H "x-api-key: ..."
+```
+
+Or via Python:
+
 ```python
 from core.utils.token_tracker import TokenTracker
+from core.utils.credit_manager import CreditManager
 
 tracker = TokenTracker()
-
-# Get in-memory summary
 summary = tracker.get_summary()
 
-# Query database
-usage = await tracker.query_usage(course_id="my_course")
-daily = await tracker.query_daily_usage(days=7)
+credits = CreditManager()
+balance = credits.get_balance(user_id)
 ```
 
 ### Production (LangSmith)

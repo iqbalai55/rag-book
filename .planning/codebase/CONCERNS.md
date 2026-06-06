@@ -85,7 +85,7 @@ While origins are restricted to `localhost:3000`, the combination of `allow_cred
 In `core/utils/cache_manager.py`, agents are cached indefinitely:
 
 ```python
-self._agents[course_id] = BookQdrantAgent(...)
+self._agents[book_id] = BookQdrantAgent(...)
 ```
 
 Each `BookQdrantAgent` holds:
@@ -226,7 +226,7 @@ while True:
         break
 ```
 
-The `get_all_by_course` method paginates through ALL documents for a course without limit. For courses with thousands of chunks, this:
+The `get_all_by_book` method paginates through ALL documents for a book without limit. For books with thousands of chunks, this:
 - Loads entire dataset into memory
 - Takes significant time
 - No streaming or cursor-based pagination to client

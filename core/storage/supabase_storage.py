@@ -48,7 +48,7 @@ class SupabaseStorage:
     def upload_pdf(
         self,
         file_path: str,
-        course_id: str,
+        book_id: str,
         filename: Optional[str] = None,
     ) -> str:
         """
@@ -56,7 +56,7 @@ class SupabaseStorage:
 
         Args:
             file_path: Local path to the PDF file
-            course_id: Course identifier (used as folder)
+            book_id: Book identifier (used as folder)
             filename: Custom filename (defaults to basename of file_path)
 
         Returns:
@@ -65,7 +65,7 @@ class SupabaseStorage:
         if filename is None:
             filename = os.path.basename(file_path)
 
-        storage_path = f"{course_id}/{filename}"
+        storage_path = f"{book_id}/{filename}"
 
         with open(file_path, "rb") as f:
             file_bytes = f.read()
@@ -76,37 +76,37 @@ class SupabaseStorage:
             file_options={"content-type": "application/pdf", "upsert": "true"},
         )
 
-        public_url = self.get_public_url(course_id, filename)
+        public_url = self.get_public_url(book_id, filename)
         logger.info(f"Uploaded PDF: {storage_path} -> {public_url}")
         return public_url
 
-    def get_public_url(self, course_id: str, filename: str) -> str:
+    def get_public_url(self, book_id: str, filename: str) -> str:
         """
         Get public URL for a stored PDF.
 
         Args:
-            course_id: Course identifier
+            book_id: Book identifier
             filename: PDF filename
 
         Returns:
             Public URL string
         """
-        storage_path = f"{course_id}/{filename}"
+        storage_path = f"{book_id}/{filename}"
         response = self.client.storage.from_(self.bucket_name).get_public_url(storage_path)
         return response
 
-    def delete_pdf(self, course_id: str, filename: str) -> bool:
+    def delete_pdf(self, book_id: str, filename: str) -> bool:
         """
         Delete a PDF from storage.
 
         Args:
-            course_id: Course identifier
+            book_id: Book identifier
             filename: PDF filename
 
         Returns:
             True if deleted successfully
         """
-        storage_path = f"{course_id}/{filename}"
+        storage_path = f"{book_id}/{filename}"
         try:
             self.client.storage.from_(self.bucket_name).remove([storage_path])
             logger.info(f"Deleted PDF: {storage_path}")
@@ -115,18 +115,18 @@ class SupabaseStorage:
             logger.error(f"Failed to delete PDF: {e}")
             return False
 
-    def list_pdfs(self, course_id: str) -> list:
+    def list_pdfs(self, book_id: str) -> list:
         """
-        List all PDFs for a course.
+        List all PDFs for a book.
 
         Args:
-            course_id: Course identifier
+            book_id: Book identifier
 
         Returns:
             List of file metadata dicts
         """
         try:
-            files = self.client.storage.from_(self.bucket_name).list(course_id)
+            files = self.client.storage.from_(self.bucket_name).list(book_id)
             return files
         except Exception as e:
             logger.error(f"Failed to list PDFs: {e}")

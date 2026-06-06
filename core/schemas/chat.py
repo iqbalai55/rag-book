@@ -6,6 +6,7 @@ class Message(BaseModel):
     content: str
 
 class ChatPayload(BaseModel):
+    user_id: str
     session_id: str
-    course_id: str
+    book_id: str
     messages: List[Message]

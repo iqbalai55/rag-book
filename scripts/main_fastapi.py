@@ -24,9 +24,11 @@ from core.schemas.chat import ChatPayload
 
 from core.utils.ingest_book import ingest_book
 from core.utils.cache_manager import CacheManager
+from core.reranker.reranker import Reranker
 from core.storage.supabase_storage import SupabaseStorage
 from core.utils.token_tracker import TokenTracker
 from core.utils.llm_config import get_chat_model
+from core.utils.credit_manager import CreditManager, FEATURE_COST
 from core.services.dataset_generator import DatasetGenerator
 from core.services.summarize_book import BookSummarizer
 from core.services.mindmap_generator import MindmapGenerator
@@ -59,14 +61,27 @@ embedding_model = HuggingFaceEmbeddings(
     model_kwargs={"device": device}
 )
 
+# ---------------- RERANKER ----------------
+use_reranker = os.getenv("USE_RERANKER", "false").lower() == "true"
+reranker_model = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+reranker = None
+if use_reranker:
+    try:
+        reranker = Reranker(model_name=reranker_model, device=device)
+    except Exception as e:
+        print(f"Warning: Failed to initialize reranker: {e}")
+
 # ---------------- CACHE MANAGER ----------------
-cache_manager = CacheManager(qdrant_client, embedding_model=embedding_model)
+cache_manager = CacheManager(qdrant_client, embedding_model=embedding_model, reranker=reranker)
 
 # ---------------- SUPABASE STORAGE ----------------
 supabase_storage = SupabaseStorage()
 
 # ---------------- TOKEN TRACKER ----------------
 token_tracker = TokenTracker()
+
+# ---------------- CREDIT MANAGER ----------------
+credit_manager = CreditManager()
 
 # ------------------ LIFESPAN ------------------
 @asynccontextmanager
@@ -127,17 +142,30 @@ async def verify_api_key(api_key: str = Security(api_key_header)):
 @app.post("/book-qa/stream", dependencies=[Depends(verify_api_key)])
 @limiter.limit("10/minute")
 async def book_qa_stream(request: Request, payload: ChatPayload):
-    
+    # Check credits before processing
+    is_sufficient, cost = credit_manager.check_sufficient_credits(payload.user_id, "agent_reasoning")
+    if not is_sufficient:
+        raise HTTPException(status_code=402, detail=f"Insufficient credits. Balance too low for feature 'agent_reasoning' (cost: {cost})")
+
+    # Burn credits
+    if not credit_manager.burn_credits(payload.user_id, "agent_reasoning"):
+        raise HTTPException(status_code=500, detail="Failed to deduct credits")
+
     async def event_generator():
-        # Create DB per collection
-        agent = await cache_manager.get_agent(payload.course_id)
-        
-        async for chunk in agent.ask_stream(
-            payload.messages[-1].content,
-            session_id=payload.session_id
-        ):
-            print("Sending chunk:", chunk)
-            yield chunk
+        try:
+            agent = await cache_manager.get_agent(payload.book_id, payload.user_id)
+
+            async for chunk in agent.ask_stream(
+                payload.messages[-1].content,
+                session_id=payload.session_id
+            ):
+                print("Sending chunk:", chunk)
+                yield chunk
+        except Exception as e:
+            # Refund credits on failure
+            credit_manager.refund_credits(payload.user_id, "agent_reasoning")
+            yield f"data: {json.dumps({'id': 'chatcmpl', 'type': 'error', 'content': str(e), 'metadata': {}})}\n\n"
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -146,7 +174,7 @@ async def book_qa_stream(request: Request, payload: ChatPayload):
 @limiter.limit("3/minute")
 async def ingest_pdf(
     request: Request,
-    course_id: str, 
+    book_id: str,
     file: UploadFile = File(...)
 ):
     try:
@@ -159,28 +187,29 @@ async def ingest_pdf(
         # Upload PDF to Supabase Storage
         storage_url = supabase_storage.upload_pdf(
             file_path=tmp_path,
-            course_id=course_id,
+            book_id=book_id,
             filename=file.filename,
         )
 
         # ✅ ALWAYS use single collection
         qdrant_db = await cache_manager.get_qdrant_db()
 
-        # ✅ pass course_id + storage_url into ingestion
-        ingest_book(
-            pdf_path=tmp_path,
-            qdrant_db=qdrant_db,
-            course_id=course_id,
-            embed_model_id=EMBED_MODEL_ID,
-            extra_metadata={"storage_url": storage_url},
-        )
+        async with cache_manager.acquire_book_lock(book_id):
+            # ✅ pass book_id + storage_url into ingestion
+            ingest_book(
+                pdf_path=tmp_path,
+                qdrant_db=qdrant_db,
+                book_id=book_id,
+                embed_model_id=EMBED_MODEL_ID,
+                extra_metadata={"storage_url": storage_url},
+            )
 
         os.remove(tmp_path)
 
         return JSONResponse({
             "status": "success",
             "collection": "lms_content",
-            "course_id": course_id,
+            "book_id": book_id,
             "storage_url": storage_url,
             "message": f"{file.filename} ingested and stored"
         })
@@ -191,23 +220,71 @@ async def ingest_pdf(
             status_code=500
         )
 
+# ------------------ DELETE BOOK CHUNKS ENDPOINT ------------------
+@app.delete("/book-qa/book/{book_id}/chunks", dependencies=[Depends(verify_api_key)])
+@limiter.limit("10/minute")
+async def delete_book_chunks(
+    request: Request,
+    book_id: str,
+    filename: str | None = None,
+):
+    """
+    Hard-delete all chunks and the Supabase Storage file for a book.
+    If `filename` is provided, only that file is removed from storage.
+    If omitted, every file under `{book_id}/` is removed.
+    Idempotent: returns 200 even if the book never existed.
+    """
+    async with cache_manager.acquire_book_lock(book_id):
+        # 1) Qdrant vectors
+        qdrant_db = await cache_manager.get_qdrant_db()
+        qdrant_db.delete_by_book(book_id)
+
+        # 2) Supabase Storage (best-effort)
+        if filename:
+            supabase_storage.delete_pdf(book_id, filename)
+        else:
+            existing = supabase_storage.list_pdfs(book_id) or []
+            for f in existing:
+                name = f.get("name") if isinstance(f, dict) else getattr(f, "name", None)
+                if name:
+                    supabase_storage.delete_pdf(book_id, name)
+
+        # 3) Evict cached agent + lock for this book
+        await cache_manager.clear_book(book_id)
+
+    return JSONResponse({
+        "status": "success",
+        "book_id": book_id,
+        "message": f"All chunks and storage for '{book_id}' removed"
+    })
+
 # ------------------ MINDMAP ENDPOINT ------------------
 @app.post("/book-qa/mindmap", dependencies=[Depends(verify_api_key)])
 @limiter.limit("5/minute")
 async def generate_mindmap(
     request: Request,
-    course_id: str,
+    user_id: str,
+    book_id: str,
     user_prompt: str | None = None,
 ):
+    # Check credits
+    is_sufficient, cost = credit_manager.check_sufficient_credits(user_id, "mindmap")
+    if not is_sufficient:
+        raise HTTPException(status_code=402, detail=f"Insufficient credits (cost: {cost})")
+
+    if not credit_manager.burn_credits(user_id, "mindmap"):
+        raise HTTPException(status_code=500, detail="Failed to deduct credits")
+
     try:
         qdrant_db = await cache_manager.get_qdrant_db()
         llm = get_chat_model()
         generator = MindmapGenerator(qdrant_db, llm)
-        result = await generator.generate(course_id, user_prompt=user_prompt)
+        result = await generator.generate(book_id, user_prompt=user_prompt)
         return JSONResponse(result)
     except HTTPException:
         raise
     except Exception as e:
+        credit_manager.refund_credits(user_id, "mindmap")
         return JSONResponse(
             {"status": "error", "message": str(e)},
             status_code=500
@@ -217,12 +294,20 @@ async def generate_mindmap(
 @app.post("/book-qa/mindmap/edit", dependencies=[Depends(verify_api_key)])
 @limiter.limit("10/minute")
 async def edit_mindmap(request: Request, body: MindmapEditRequest):
+    # Check credits
+    is_sufficient, cost = credit_manager.check_sufficient_credits(body.user_id, "mindmap")
+    if not is_sufficient:
+        raise HTTPException(status_code=402, detail=f"Insufficient credits (cost: {cost})")
+
+    if not credit_manager.burn_credits(body.user_id, "mindmap"):
+        raise HTTPException(status_code=500, detail="Failed to deduct credits")
+
     try:
         qdrant_db = await cache_manager.get_qdrant_db()
         llm = get_chat_model()
         generator = MindmapGenerator(qdrant_db, llm)
         result = await generator.edit(
-            course_id=body.course_id,
+            book_id=body.book_id,
             mermaid=body.mermaid,
             instruction=body.instruction,
         )
@@ -230,6 +315,7 @@ async def edit_mindmap(request: Request, body: MindmapEditRequest):
     except HTTPException:
         raise
     except Exception as e:
+        credit_manager.refund_credits(body.user_id, "mindmap")
         return JSONResponse(
             {"status": "error", "message": str(e)},
             status_code=500
@@ -240,20 +326,30 @@ async def edit_mindmap(request: Request, body: MindmapEditRequest):
 @limiter.limit("2/minute")
 async def generate_dataset(
     request: Request,
-    course_id: str,
+    user_id: str,
+    book_id: str,
     difficulty: str = "medium",
     num_mcq: int = 3,
     num_essay: int = 2,
 ):
+    # Check credits
+    is_sufficient, cost = credit_manager.check_sufficient_credits(user_id, "dataset")
+    if not is_sufficient:
+        raise HTTPException(status_code=402, detail=f"Insufficient credits (cost: {cost})")
+
+    if not credit_manager.burn_credits(user_id, "dataset"):
+        raise HTTPException(status_code=500, detail="Failed to deduct credits")
+
     try:
         qdrant_db = await cache_manager.get_qdrant_db()
         llm = get_chat_model()
         generator = DatasetGenerator(qdrant_db, llm)
-        result = await generator.generate(course_id, difficulty, num_mcq, num_essay)
+        result = await generator.generate(book_id, difficulty, num_mcq, num_essay)
         return JSONResponse(result)
     except HTTPException:
         raise
     except Exception as e:
+        credit_manager.refund_credits(user_id, "dataset")
         return JSONResponse(
             {"status": "error", "message": str(e)},
             status_code=500
@@ -264,19 +360,28 @@ async def generate_dataset(
 @limiter.limit("2/minute")
 async def summarize_book(
     request: Request,
-    course_id: str,
+    user_id: str,
+    book_id: str,
     user_prompt: str | None = None,
 ):
-    """Summarize entire book using hierarchical map-reduce approach."""
+    # Check credits
+    is_sufficient, cost = credit_manager.check_sufficient_credits(user_id, "summarize")
+    if not is_sufficient:
+        raise HTTPException(status_code=402, detail=f"Insufficient credits (cost: {cost})")
+
+    if not credit_manager.burn_credits(user_id, "summarize"):
+        raise HTTPException(status_code=500, detail="Failed to deduct credits")
+
     try:
         qdrant_db = await cache_manager.get_qdrant_db()
         llm = get_chat_model()
         summarizer = BookSummarizer(qdrant_db, llm)
-        result = await summarizer.summarize(course_id, user_prompt=user_prompt)
+        result = await summarizer.summarize(book_id, user_prompt=user_prompt)
         return JSONResponse(result)
     except HTTPException:
         raise
     except Exception as e:
+        credit_manager.refund_credits(user_id, "summarize")
         return JSONResponse(
             {"status": "error", "message": str(e)},
             status_code=500
@@ -286,13 +391,20 @@ async def summarize_book(
 @app.post("/book-qa/summarize/edit", dependencies=[Depends(verify_api_key)])
 @limiter.limit("10/minute")
 async def edit_summary(request: Request, body: SummaryEditRequest):
-    """Edit existing summary based on user instructions."""
+    # Check credits
+    is_sufficient, cost = credit_manager.check_sufficient_credits(body.user_id, "summarize")
+    if not is_sufficient:
+        raise HTTPException(status_code=402, detail=f"Insufficient credits (cost: {cost})")
+
+    if not credit_manager.burn_credits(body.user_id, "summarize"):
+        raise HTTPException(status_code=500, detail="Failed to deduct credits")
+
     try:
         qdrant_db = await cache_manager.get_qdrant_db()
         llm = get_chat_model()
         summarizer = BookSummarizer(qdrant_db, llm)
         result = await summarizer.edit(
-            course_id=body.course_id,
+            book_id=body.book_id,
             title=body.title,
             overview=body.overview,
             key_themes=body.key_themes,
@@ -303,6 +415,7 @@ async def edit_summary(request: Request, body: SummaryEditRequest):
     except HTTPException:
         raise
     except Exception as e:
+        credit_manager.refund_credits(body.user_id, "summarize")
         return JSONResponse(
             {"status": "error", "message": str(e)},
             status_code=500
@@ -313,7 +426,7 @@ async def edit_summary(request: Request, body: SummaryEditRequest):
 @limiter.limit("30/minute")
 async def get_token_usage(
     request: Request,
-    course_id: str,
+    book_id: str,
     session_id: str | None = None,
     feature: str | None = None,
     from_date: str | None = None,
@@ -326,7 +439,7 @@ async def get_token_usage(
 
         # Get from database
         db_usage = await token_tracker.query_usage(
-            course_id=course_id,
+            book_id=book_id,
             session_id=session_id,
             feature=feature,
             from_date=from_date,
@@ -347,13 +460,13 @@ async def get_token_usage(
 @limiter.limit("30/minute")
 async def get_daily_token_usage(
     request: Request,
-    course_id: str,
+    book_id: str,
     days: int = 7,
 ):
     """Query daily token usage aggregation."""
     try:
         daily_usage = await token_tracker.query_daily_usage(
-            course_id=course_id,
+            book_id=book_id,
             days=days,
         )
         return JSONResponse({"daily_usage": daily_usage})
@@ -374,7 +487,77 @@ async def flush_token_usage():
             {"status": "error", "message": str(e)},
             status_code=500
         )
-        
+
+# ------------------ CREDIT ENDPOINTS ------------------
+@app.get("/credits/{user_id}", dependencies=[Depends(verify_api_key)])
+@limiter.limit("30/minute")
+async def get_credits(request: Request, user_id: str):
+    """Get user's current credit balance and recent transactions."""
+    try:
+        balance = credit_manager.get_balance(user_id)
+        recent = await credit_manager.get_recent_transactions(user_id, limit=10)
+        return JSONResponse({
+            "balance": balance,
+            "recent_transactions": recent,
+        })
+    except Exception as e:
+        return JSONResponse(
+            {"status": "error", "message": str(e)},
+            status_code=500
+        )
+
+@app.post("/credits/{user_id}/add", dependencies=[Depends(verify_api_key)])
+@limiter.limit("10/minute")
+async def add_credits(
+    request: Request,
+    user_id: str,
+    amount: float,
+    transaction_type: str = "purchase",
+):
+    """Add credits to user account (admin only)."""
+    try:
+        success = credit_manager.add_credits(user_id, amount, transaction_type)
+        if success:
+            return JSONResponse({
+                "status": "success",
+                "new_balance": credit_manager.get_balance(user_id),
+            })
+        return JSONResponse(
+            {"status": "error", "message": "Failed to add credits"},
+            status_code=500
+        )
+    except Exception as e:
+        return JSONResponse(
+            {"status": "error", "message": str(e)},
+            status_code=500
+        )
+
+@app.post("/credits/{user_id}/burn", dependencies=[Depends(verify_api_key)])
+@limiter.limit("30/minute")
+async def burn_credits(
+    request: Request,
+    user_id: str,
+    feature: str = "unknown",
+    amount: float = 0.0,
+):
+    """Manually burn credits for a user."""
+    try:
+        success = credit_manager.burn_credits(user_id, feature, estimated_cost=amount)
+        if success:
+            return JSONResponse({
+                "status": "success",
+                "new_balance": credit_manager.get_balance(user_id),
+            })
+        return JSONResponse(
+            {"status": "error", "message": "Failed to burn credits"},
+            status_code=500
+        )
+    except Exception as e:
+        return JSONResponse(
+            {"status": "error", "message": str(e)},
+            status_code=500
+        )
+
 async def main():
     config = uvicorn.Config(app=app, host="127.0.0.1", port=8001)
     server = uvicorn.Server(config)

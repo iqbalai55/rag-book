@@ -32,7 +32,7 @@ def main():
 
     agent = BookPodcastAgent(
         qdrant_db=qdrant_db,
-        course_id="demo_course"
+        book_id="demo_book"
     )
 
     print("Ready! Type 'exit' to quit.\n")

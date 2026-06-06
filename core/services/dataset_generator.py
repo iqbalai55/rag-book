@@ -75,17 +75,17 @@ class DatasetGenerator:
 
     async def generate(
         self,
-        course_id: str,
+        book_id: str,
         difficulty: str = "medium",
         num_mcq: int = 3,
         num_essay: int = 2,
     ) -> dict:
         """Generate dataset with MCQ and Essay for each chapter."""
-        docs = self.qdrant_db.get_all_by_course(course_id)
+        docs = self.qdrant_db.get_all_by_book(book_id)
 
         if not docs:
             raise HTTPException(
-                status_code=404, detail="No content found for this course"
+                status_code=404, detail="No content found for this book"
             )
 
         context = "\n\n".join([d.page_content for d in docs])[:15000]
@@ -93,7 +93,7 @@ class DatasetGenerator:
         # Step 1: Identify chapters
         chapter_llm = self.llm.with_structured_output(ChapterIdentification)
         chapter_prompt = CHAPTER_IDENTIFICATION_PROMPT.format(
-            context=context, topik=course_id
+            context=context, topik=book_id
         )
         chapter_result = chapter_llm.invoke(chapter_prompt)
         chapters = chapter_result.chapters
@@ -105,14 +105,14 @@ class DatasetGenerator:
 
         # Step 2: Generate questions for each chapter
         dataset = {
-            "course_id": course_id,
+            "book_id": book_id,
             "difficulty": difficulty,
             "total_chapters": len(chapters),
             "chapters": [],
         }
 
         for chapter_title in chapters:
-            chapter_docs = self.qdrant_db.query(chapter_title, course_id=course_id, k=3)
+            chapter_docs = self.qdrant_db.query(chapter_title, book_id=book_id, k=3)
             chapter_context = "\n\n".join([d.page_content for d in chapter_docs])[:8000]
 
             if not chapter_context:

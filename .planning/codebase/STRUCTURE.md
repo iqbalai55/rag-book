@@ -140,7 +140,7 @@ rag-book/
 - Descriptive: Class names clearly indicate their responsibility
 
 **Variables and Functions:**
-- Snake_case: Variables and functions use snake_case (`course_id`, `get_agent`, `query`)
+- Snake_case: Variables and functions use snake_case (`book_id`, `get_agent`, `query`)
 - Descriptive: Names clearly indicate purpose and usage
 
 **Constants:**

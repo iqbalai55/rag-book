@@ -161,11 +161,14 @@ class TestEssayResponse:
 class TestChatPayload:
     def test_valid(self):
         payload = ChatPayload(
+            user_id="u1",
             session_id="s1",
-            course_id="c1",
+            book_id="b1",
             messages=[Message(role="user", content="Hello")],
         )
+        assert payload.user_id == "u1"
         assert payload.session_id == "s1"
+        assert payload.book_id == "b1"
         assert len(payload.messages) == 1
 
 

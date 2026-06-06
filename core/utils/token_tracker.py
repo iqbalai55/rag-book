@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+from contextlib import asynccontextmanager
 from typing import Optional, Dict, List
 from datetime import datetime
 from dataclasses import dataclass, field
@@ -29,8 +30,9 @@ MODEL_PRICING = {
 
 @dataclass
 class TokenUsageRecord:
+    user_id: Optional[str] = None
     session_id: Optional[str] = None
-    course_id: Optional[str] = None
+    book_id: Optional[str] = None
     feature: str = "unknown"
     model: str = "unknown"
     provider: str = "unknown"
@@ -77,7 +79,7 @@ class TokenTracker:
         self._by_model: Dict[str, Dict] = defaultdict(lambda: {
             "tokens": 0, "cost": 0.0, "calls": 0
         })
-        self._by_course: Dict[str, Dict] = defaultdict(lambda: {
+        self._by_book: Dict[str, Dict] = defaultdict(lambda: {
             "tokens": 0, "cost": 0.0, "calls": 0
         })
 
@@ -103,8 +105,9 @@ class TokenTracker:
         input_tokens: int,
         output_tokens: int,
         feature: str = "unknown",
+        user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        course_id: Optional[str] = None,
+        book_id: Optional[str] = None,
         latency_ms: int = 0,
         metadata: Optional[Dict] = None,
     ):
@@ -113,8 +116,9 @@ class TokenTracker:
         cost = self.calculate_cost(model, input_tokens, output_tokens)
 
         record = TokenUsageRecord(
+            user_id=user_id,
             session_id=session_id,
-            course_id=course_id,
+            book_id=book_id,
             feature=feature,
             model=model,
             provider=provider,
@@ -137,10 +141,10 @@ class TokenTracker:
         self._by_model[model]["tokens"] += total_tokens
         self._by_model[model]["cost"] += cost
         self._by_model[model]["calls"] += 1
-        if course_id:
-            self._by_course[course_id]["tokens"] += total_tokens
-            self._by_course[course_id]["cost"] += cost
-            self._by_course[course_id]["calls"] += 1
+        if book_id:
+            self._by_book[book_id]["tokens"] += total_tokens
+            self._by_book[book_id]["cost"] += cost
+            self._by_book[book_id]["calls"] += 1
 
         self._buffer.append(record)
         logger.debug(
@@ -173,14 +177,15 @@ class TokenTracker:
                         await cur.execute(
                             """
                             INSERT INTO token_usage
-                            (session_id, course_id, feature, model, provider,
+                            (user_id, session_id, book_id, feature, model, provider,
                              input_tokens, output_tokens, total_tokens,
                              estimated_cost_usd, latency_ms, metadata)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """,
                             (
+                                record.user_id,
                                 record.session_id,
-                                record.course_id,
+                                record.book_id,
                                 record.feature,
                                 record.model,
                                 record.provider,
@@ -203,13 +208,13 @@ class TokenTracker:
             "totals": self._totals.copy(),
             "by_feature": dict(self._by_feature),
             "by_model": dict(self._by_model),
-            "by_course": dict(self._by_course),
+            "by_book": dict(self._by_book),
             "buffer_size": len(self._buffer),
         }
 
     async def query_usage(
         self,
-        course_id: Optional[str] = None,
+        book_id: Optional[str] = None,
         session_id: Optional[str] = None,
         feature: Optional[str] = None,
         from_date: Optional[str] = None,
@@ -223,9 +228,9 @@ class TokenTracker:
         conditions = []
         params = []
 
-        if course_id:
-            conditions.append("course_id = %s")
-            params.append(course_id)
+        if book_id:
+            conditions.append("book_id = %s")
+            params.append(book_id)
         if session_id:
             conditions.append("session_id = %s")
             params.append(session_id)
@@ -271,7 +276,7 @@ class TokenTracker:
 
     async def query_daily_usage(
         self,
-        course_id: Optional[str] = None,
+        book_id: Optional[str] = None,
         days: int = 7,
     ) -> List[Dict]:
         """Query daily token usage aggregation."""
@@ -281,9 +286,9 @@ class TokenTracker:
         conditions = ["created_at >= NOW() - INTERVAL %s"]
         params = [f"{days} days"]
 
-        if course_id:
-            conditions.append("course_id = %s")
-            params.append(course_id)
+        if book_id:
+            conditions.append("book_id = %s")
+            params.append(book_id)
 
         where_clause = " AND ".join(conditions)
 

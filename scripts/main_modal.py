@@ -13,6 +13,7 @@ from core.utils.cache_manager import CacheManager
 from core.storage.supabase_storage import SupabaseStorage
 from core.utils.token_tracker import TokenTracker
 from core.utils.llm_config import get_chat_model
+from core.utils.credit_manager import CreditManager, FEATURE_COST
 from core.services.dataset_generator import DatasetGenerator
 from core.services.summarize_book import BookSummarizer
 from core.services.mindmap_generator import MindmapGenerator
@@ -80,6 +81,9 @@ supabase_storage = SupabaseStorage()
 
 # ---------------- TOKEN TRACKER ----------------
 token_tracker = TokenTracker()
+
+# ---------------- CREDIT MANAGER ----------------
+credit_manager = CreditManager()
 
 # ---------------- API KEY ----------------
 api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
@@ -153,7 +157,7 @@ async def lifespan(app: FastAPI):
 )
 @modal.asgi_app(label="book-qa-fastapi")
 def fastapi_app():
-    
+
     web_app = FastAPI(lifespan=lifespan)
     web_app.state.limiter = limiter
     web_app.add_exception_handler(
@@ -165,13 +169,27 @@ def fastapi_app():
     @web_app.post("/book-qa/stream", dependencies=[Depends(verify_api_key)])
     @limiter.limit("10/minute")
     async def book_qa_stream(request: Request, payload: ChatPayload):
+        # Check credits
+        is_sufficient, cost = credit_manager.check_sufficient_credits(payload.user_id, "agent_reasoning")
+        if not is_sufficient:
+            raise HTTPException(status_code=402, detail=f"Insufficient credits (cost: {cost})")
+
+        if not credit_manager.burn_credits(payload.user_id, "agent_reasoning"):
+            raise HTTPException(status_code=500, detail="Failed to deduct credits")
+
         async def event_generator():
-            agent = await cache_manager.get_agent(payload.course_id)
-            async for chunk in agent.ask_stream(
-                payload.messages[-1].content,
-                session_id=payload.session_id
-            ):
-                yield chunk
+            try:
+                agent = await cache_manager.get_agent(payload.book_id, payload.user_id)
+                async for chunk in agent.ask_stream(
+                    payload.messages[-1].content,
+                    session_id=payload.session_id
+                ):
+                    yield chunk
+            except Exception as e:
+                credit_manager.refund_credits(payload.user_id, "agent_reasoning")
+                yield f"data: {json.dumps({'id': 'chatcmpl', 'type': 'error', 'content': str(e), 'metadata': {}})}\n\n"
+                yield "data: [DONE]\n\n"
+
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 
     # ---------------- INGEST ----------------
@@ -179,7 +197,7 @@ def fastapi_app():
     @limiter.limit("3/minute")
     async def ingest_pdf(
         request: Request,
-        course_id: str,  # 🔥 NEW: tenant identifier
+        book_id: str,
         file: UploadFile = File(...)
     ):
         tmp_path = f"./{file.filename}"
@@ -191,26 +209,27 @@ def fastapi_app():
             # Upload PDF to Supabase Storage
             storage_url = supabase_storage.upload_pdf(
                 file_path=tmp_path,
-                course_id=course_id,
+                book_id=book_id,
                 filename=file.filename,
             )
 
             qdrant_db = await cache_manager.get_qdrant_db()
 
-            ingest_book(
-                pdf_path=tmp_path,
-                qdrant_db=qdrant_db,
-                course_id=course_id,
-                embed_model_id=EMBED_MODEL_ID,
-                extra_metadata={"storage_url": storage_url},
-            )
+            async with cache_manager.acquire_book_lock(book_id):
+                ingest_book(
+                    pdf_path=tmp_path,
+                    qdrant_db=qdrant_db,
+                    book_id=book_id,
+                    embed_model_id=EMBED_MODEL_ID,
+                    extra_metadata={"storage_url": storage_url},
+                )
 
             embedding_cache_volume.commit()
 
             return JSONResponse({
                 "status": "success",
                 "collection": "lms_content",
-                "course_id": course_id,
+                "book_id": book_id,
                 "storage_url": storage_url,
                 "message": f"{file.filename} ingested and stored"
             })
@@ -225,23 +244,62 @@ def fastapi_app():
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
+    # ---------------- DELETE BOOK CHUNKS ----------------
+    @web_app.delete("/book-qa/book/{book_id}/chunks", dependencies=[Depends(verify_api_key)])
+    @limiter.limit("10/minute")
+    async def delete_book_chunks(
+        request: Request,
+        book_id: str,
+        filename: str | None = None,
+    ):
+        async with cache_manager.acquire_book_lock(book_id):
+            qdrant_db = await cache_manager.get_qdrant_db()
+            qdrant_db.delete_by_book(book_id)
+
+            if filename:
+                supabase_storage.delete_pdf(book_id, filename)
+            else:
+                existing = supabase_storage.list_pdfs(book_id) or []
+                for f in existing:
+                    name = f.get("name") if isinstance(f, dict) else getattr(f, "name", None)
+                    if name:
+                        supabase_storage.delete_pdf(book_id, name)
+
+            await cache_manager.clear_book(book_id)
+
+        return JSONResponse({
+            "status": "success",
+            "book_id": book_id,
+            "message": f"All chunks and storage for '{book_id}' removed"
+        })
+
     # ---------------- MINDMAP ----------------
     @web_app.post("/book-qa/mindmap", dependencies=[Depends(verify_api_key)])
     @limiter.limit("5/minute")
     async def generate_mindmap(
         request: Request,
-        course_id: str,
+        user_id: str,
+        book_id: str,
         user_prompt: str | None = None,
     ):
+        # Check credits
+        is_sufficient, cost = credit_manager.check_sufficient_credits(user_id, "mindmap")
+        if not is_sufficient:
+            raise HTTPException(status_code=402, detail=f"Insufficient credits (cost: {cost})")
+
+        if not credit_manager.burn_credits(user_id, "mindmap"):
+            raise HTTPException(status_code=500, detail="Failed to deduct credits")
+
         try:
             qdrant_db = await cache_manager.get_qdrant_db()
             llm = get_chat_model()
             generator = MindmapGenerator(qdrant_db, llm)
-            result = await generator.generate(course_id, user_prompt=user_prompt)
+            result = await generator.generate(book_id, user_prompt=user_prompt)
             return JSONResponse(result)
         except HTTPException:
             raise
         except Exception as e:
+            credit_manager.refund_credits(user_id, "mindmap")
             return JSONResponse(
                 {"status": "error", "message": str(e)},
                 status_code=500
@@ -251,12 +309,20 @@ def fastapi_app():
     @web_app.post("/book-qa/mindmap/edit", dependencies=[Depends(verify_api_key)])
     @limiter.limit("10/minute")
     async def edit_mindmap(request: Request, body: MindmapEditRequest):
+        # Check credits
+        is_sufficient, cost = credit_manager.check_sufficient_credits(body.user_id, "mindmap")
+        if not is_sufficient:
+            raise HTTPException(status_code=402, detail=f"Insufficient credits (cost: {cost})")
+
+        if not credit_manager.burn_credits(body.user_id, "mindmap"):
+            raise HTTPException(status_code=500, detail="Failed to deduct credits")
+
         try:
             qdrant_db = await cache_manager.get_qdrant_db()
             llm = get_chat_model()
             generator = MindmapGenerator(qdrant_db, llm)
             result = await generator.edit(
-                course_id=body.course_id,
+                book_id=body.book_id,
                 mermaid=body.mermaid,
                 instruction=body.instruction,
             )
@@ -264,6 +330,7 @@ def fastapi_app():
         except HTTPException:
             raise
         except Exception as e:
+            credit_manager.refund_credits(body.user_id, "mindmap")
             return JSONResponse(
                 {"status": "error", "message": str(e)},
                 status_code=500
@@ -274,20 +341,30 @@ def fastapi_app():
     @limiter.limit("2/minute")
     async def generate_dataset(
         request: Request,
-        course_id: str,
+        user_id: str,
+        book_id: str,
         difficulty: str = "medium",
         num_mcq: int = 3,
         num_essay: int = 2,
     ):
+        # Check credits
+        is_sufficient, cost = credit_manager.check_sufficient_credits(user_id, "dataset")
+        if not is_sufficient:
+            raise HTTPException(status_code=402, detail=f"Insufficient credits (cost: {cost})")
+
+        if not credit_manager.burn_credits(user_id, "dataset"):
+            raise HTTPException(status_code=500, detail="Failed to deduct credits")
+
         try:
             qdrant_db = await cache_manager.get_qdrant_db()
             llm = get_chat_model()
             generator = DatasetGenerator(qdrant_db, llm)
-            result = await generator.generate(course_id, difficulty, num_mcq, num_essay)
+            result = await generator.generate(book_id, difficulty, num_mcq, num_essay)
             return JSONResponse(result)
         except HTTPException:
             raise
         except Exception as e:
+            credit_manager.refund_credits(user_id, "dataset")
             return JSONResponse(
                 {"status": "error", "message": str(e)},
                 status_code=500
@@ -298,19 +375,28 @@ def fastapi_app():
     @limiter.limit("2/minute")
     async def summarize_book(
         request: Request,
-        course_id: str,
+        user_id: str,
+        book_id: str,
         user_prompt: str | None = None,
     ):
-        """Summarize entire book using hierarchical map-reduce approach."""
+        # Check credits
+        is_sufficient, cost = credit_manager.check_sufficient_credits(user_id, "summarize")
+        if not is_sufficient:
+            raise HTTPException(status_code=402, detail=f"Insufficient credits (cost: {cost})")
+
+        if not credit_manager.burn_credits(user_id, "summarize"):
+            raise HTTPException(status_code=500, detail="Failed to deduct credits")
+
         try:
             qdrant_db = await cache_manager.get_qdrant_db()
             llm = get_chat_model()
             summarizer = BookSummarizer(qdrant_db, llm)
-            result = await summarizer.summarize(course_id, user_prompt=user_prompt)
+            result = await summarizer.summarize(book_id, user_prompt=user_prompt)
             return JSONResponse(result)
         except HTTPException:
             raise
         except Exception as e:
+            credit_manager.refund_credits(user_id, "summarize")
             return JSONResponse(
                 {"status": "error", "message": str(e)},
                 status_code=500
@@ -320,13 +406,20 @@ def fastapi_app():
     @web_app.post("/book-qa/summarize/edit", dependencies=[Depends(verify_api_key)])
     @limiter.limit("10/minute")
     async def edit_summary(request: Request, body: SummaryEditRequest):
-        """Edit existing summary based on user instructions."""
+        # Check credits
+        is_sufficient, cost = credit_manager.check_sufficient_credits(body.user_id, "summarize")
+        if not is_sufficient:
+            raise HTTPException(status_code=402, detail=f"Insufficient credits (cost: {cost})")
+
+        if not credit_manager.burn_credits(body.user_id, "summarize"):
+            raise HTTPException(status_code=500, detail="Failed to deduct credits")
+
         try:
             qdrant_db = await cache_manager.get_qdrant_db()
             llm = get_chat_model()
             summarizer = BookSummarizer(qdrant_db, llm)
             result = await summarizer.edit(
-                course_id=body.course_id,
+                book_id=body.book_id,
                 title=body.title,
                 overview=body.overview,
                 key_themes=body.key_themes,
@@ -337,6 +430,7 @@ def fastapi_app():
         except HTTPException:
             raise
         except Exception as e:
+            credit_manager.refund_credits(body.user_id, "summarize")
             return JSONResponse(
                 {"status": "error", "message": str(e)},
                 status_code=500
@@ -347,7 +441,7 @@ def fastapi_app():
     @limiter.limit("30/minute")
     async def get_token_usage(
         request: Request,
-        course_id: str,
+        book_id: str,
         session_id: str | None = None,
         feature: str | None = None,
         from_date: str | None = None,
@@ -357,7 +451,7 @@ def fastapi_app():
         try:
             in_memory_summary = token_tracker.get_summary()
             db_usage = await token_tracker.query_usage(
-                course_id=course_id,
+                book_id=book_id,
                 session_id=session_id,
                 feature=feature,
                 from_date=from_date,
@@ -377,13 +471,13 @@ def fastapi_app():
     @limiter.limit("30/minute")
     async def get_daily_token_usage(
         request: Request,
-        course_id: str,
+        book_id: str,
         days: int = 7,
     ):
         """Query daily token usage aggregation."""
         try:
             daily_usage = await token_tracker.query_daily_usage(
-                course_id=course_id,
+                book_id=book_id,
                 days=days,
             )
             return JSONResponse({"daily_usage": daily_usage})
@@ -399,6 +493,50 @@ def fastapi_app():
         try:
             await token_tracker.flush()
             return JSONResponse({"status": "flushed"})
+        except Exception as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)},
+                status_code=500
+            )
+
+    # ---------------- CREDIT ENDPOINTS ----------------
+    @web_app.get("/credits/{user_id}", dependencies=[Depends(verify_api_key)])
+    @limiter.limit("30/minute")
+    async def get_credits(request: Request, user_id: str):
+        """Get user's current credit balance and recent transactions."""
+        try:
+            balance = credit_manager.get_balance(user_id)
+            recent = await credit_manager.get_recent_transactions(user_id, limit=10)
+            return JSONResponse({
+                "balance": balance,
+                "recent_transactions": recent,
+            })
+        except Exception as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)},
+                status_code=500
+            )
+
+    @web_app.post("/credits/{user_id}/add", dependencies=[Depends(verify_api_key)])
+    @limiter.limit("10/minute")
+    async def add_credits(
+        request: Request,
+        user_id: str,
+        amount: float,
+        transaction_type: str = "purchase",
+    ):
+        """Add credits to user account (admin only)."""
+        try:
+            success = credit_manager.add_credits(user_id, amount, transaction_type)
+            if success:
+                return JSONResponse({
+                    "status": "success",
+                    "new_balance": credit_manager.get_balance(user_id),
+                })
+            return JSONResponse(
+                {"status": "error", "message": "Failed to add credits"},
+                status_code=500
+            )
         except Exception as e:
             return JSONResponse(
                 {"status": "error", "message": str(e)},

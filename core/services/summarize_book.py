@@ -27,11 +27,11 @@ class BookSummarizer:
             return f"\n7. Instruksi tambahan dari user: {user_prompt}"
         return ""
 
-    def _identify_chapters(self, context: str, course_id: str) -> List[str]:
+    def _identify_chapters(self, context: str, book_id: str) -> List[str]:
         """Identify chapters from book content."""
         chapter_llm = self.llm.with_structured_output(ChapterIdentification)
         chapter_prompt = CHAPTER_IDENTIFICATION_PROMPT.format(
-            context=context, topik=course_id
+            context=context, topik=book_id
         )
         chapter_result = chapter_llm.invoke(chapter_prompt)
         return chapter_result.chapters
@@ -58,7 +58,7 @@ class BookSummarizer:
     def _generate_book_summary(
         self,
         chapter_summaries_text: str,
-        course_id: str,
+        book_id: str,
         user_prompt_section: str = "",
     ) -> BookSummaryResponse | None:
         """Generate final book summary from chapter summaries."""
@@ -66,7 +66,7 @@ class BookSummarizer:
             book_summary_llm = self.llm.with_structured_output(BookSummaryResponse)
             book_summary_prompt = BOOK_SUMMARY_PROMPT.format(
                 chapter_summaries=chapter_summaries_text[:10000],
-                topic=course_id,
+                topic=book_id,
                 user_prompt_section=user_prompt_section,
             )
             return book_summary_llm.invoke(book_summary_prompt)
@@ -76,15 +76,15 @@ class BookSummarizer:
 
     async def summarize(
         self,
-        course_id: str,
+        book_id: str,
         user_prompt: Optional[str] = None,
     ) -> dict:
         """Summarize entire book."""
-        docs = self.qdrant_db.get_all_by_course(course_id)
+        docs = self.qdrant_db.get_all_by_book(book_id)
 
         if not docs:
             raise HTTPException(
-                status_code=404, detail="No content found for this course"
+                status_code=404, detail="No content found for this book"
             )
 
         # Collect all sources
@@ -102,7 +102,7 @@ class BookSummarizer:
 
         # Step 1: Identify chapters
         context = "\n\n".join([d.page_content for d in docs])[:15000]
-        chapters = self._identify_chapters(context, course_id)
+        chapters = self._identify_chapters(context, book_id)
 
         if not chapters:
             raise HTTPException(
@@ -112,7 +112,7 @@ class BookSummarizer:
         # Step 2: Summarize each chapter
         chapter_summaries = []
         for chapter_title in chapters:
-            chapter_docs = self.qdrant_db.query(chapter_title, course_id=course_id, k=5)
+            chapter_docs = self.qdrant_db.query(chapter_title, book_id=book_id, k=5)
             chapter_context = "\n\n".join([d.page_content for d in chapter_docs])[:8000]
 
             if not chapter_context:
@@ -139,13 +139,13 @@ class BookSummarizer:
 
         book_summary = self._generate_book_summary(
             chapter_summaries_text,
-            course_id,
+            book_id,
             user_prompt_section,
         )
 
         # Build final response
         response = {
-            "course_id": course_id,
+            "book_id": book_id,
             "title": book_summary.title if book_summary else "Ringkasan Buku",
             "overview": book_summary.overview if book_summary else "",
             "chapters": [cs.model_dump() for cs in chapter_summaries],
@@ -158,7 +158,7 @@ class BookSummarizer:
 
     async def edit(
         self,
-        course_id: str,
+        book_id: str,
         title: str,
         overview: str,
         key_themes: List[str],
@@ -198,7 +198,7 @@ class BookSummarizer:
             parsed = json.loads(content)
 
             return {
-                "course_id": course_id,
+                "book_id": book_id,
                 "title": parsed.get("title", title),
                 "overview": parsed.get("overview", overview),
                 "key_themes": parsed.get("key_themes", key_themes),

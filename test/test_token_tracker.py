@@ -69,7 +69,7 @@ class TestTokenTracker:
         )
         assert "gpt-4o" in tracker._by_model
 
-    def test_record_updates_by_course(self):
+    def test_record_updates_by_book(self):
         tracker = TokenTracker()
         tracker.record(
             model="gpt-4o",
@@ -77,9 +77,9 @@ class TestTokenTracker:
             input_tokens=100,
             output_tokens=50,
             feature="test",
-            course_id="course_1",
+            book_id="book_1",
         )
-        assert "course_1" in tracker._by_course
+        assert "book_1" in tracker._by_book
 
     def test_record_adds_to_buffer(self):
         tracker = TokenTracker()
@@ -99,7 +99,7 @@ class TestTokenTracker:
         assert "totals" in summary
         assert "by_feature" in summary
         assert "by_model" in summary
-        assert "by_course" in summary
+        assert "by_book" in summary
         assert "buffer_size" in summary
 
 
@@ -107,7 +107,7 @@ class TestTokenUsageRecord:
     def test_valid_record(self):
         record = TokenUsageRecord(
             session_id="s1",
-            course_id="c1",
+            book_id="b1",
             feature="test",
             model="gpt-4o",
             provider="openai",

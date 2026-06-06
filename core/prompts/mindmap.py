@@ -1,23 +1,18 @@
-MINDMAP_PROMPT = """Anda adalah ahli visualisasi pengetahuan dan penyusun mindmap edukatif.
+MINDMAP_PROMPT = """Anda adalah kurator buku dan ahli visualisasi pengetahuan.
 
-Tugas Anda adalah mengubah struktur TOC buku menjadi mindmap Mermaid yang:
-
-* mudah dipahami manusia,
-* menonjolkan poin paling penting,
-* ringkas namun informatif,
-* dan memiliki struktur logis.
+Tugas Anda adalah mengubah struktur TOC buku menjadi mindmap Mermaid yang membantu pembaca
+memutuskan apakah buku ini layak mereka baca — sebelum membuka satu halaman pun.
 
 ==================================================
 TUJUAN
 ======
 
-Buat mindmap yang:
+Buat mindmap yang menjawab dua pertanyaan kritis pembaca:
+1. "Buku ini sebenarnya membahas apa?"
+2. "Apa yang akan saya pahami atau bisa saya lakukan setelah membaca ini?"
 
-1. Menangkap inti pembahasan buku
-2. Menampilkan hubungan antar topik utama
-3. Fokus pada konsep penting dan aktual
-4. Menghindari detail kecil yang tidak penting
-5. Mudah dibaca saat divisualisasikan
+Mindmap harus membuat pembaca berkata "oh, jadi intinya gitu" di setiap node —
+bukan sekadar melihat daftar topik tanpa makna.
 
 ==================================================
 ATURAN FORMAT
@@ -26,74 +21,88 @@ ATURAN FORMAT
 Gunakan format Mermaid berikut:
 
 mindmap
-root((Judul))
-Cabang Utama
-Sub Topik
+  root((Judul Buku))
+    Cabang Utama
+      Sub Topik
+        Insight Node
 
 ==================================================
 ATURAN STRUKTUR
 ===============
 
-1. Maksimal 3 level:
+1. 4 level:
+   * Level 1 — Root: judul buku
+   * Level 2 — Cabang utama: tema besar (2–4 kata)
+   * Level 3 — Sub-cabang: konsep atau ide spesifik (2–5 kata)
+   * Level 4 — Insight Node (★): WAJIB ada di setiap sub-cabang,
+     berisi penjelasan inti ide dalam 1–2 kalimat
 
-   * Root
-   * Cabang utama
-   * Sub-cabang
+2. Jumlah cabang utama: minimal 4, maksimal 8
 
-2. Jumlah cabang utama:
+3. Sub-cabang per cabang: 2–4, pilih yang paling membentuk inti buku
 
-   * Minimal 4
-   * Maksimal 7
+4. Setiap sub-cabang WAJIB punya tepat 1 Insight Node (★)
 
-3. Sub-cabang:
+==================================================
+ATURAN INSIGHT NODE (★)
+=======================
 
-   * Hanya poin paling penting
-   * Maksimal 4 sub-cabang per cabang
+Ini adalah bagian terpenting. Insight Node HARUS:
 
-4. Prioritaskan:
+1. Dimulai dengan "★ "
+2. Menjelaskan inti ide dari sub-cabang tersebut dalam 1–2 kalimat
+3. Menjawab salah satu dari:
+   - "Apa inti dari konsep ini?"
+   - "Mengapa ini penting?"
+   - "Bagaimana cara kerjanya?"
+4. Boleh berbentuk paragraf mini — kejelasan lebih penting dari singkatnya
 
-   * konsep inti,
-   * proses utama,
-   * strategi,
-   * framework,
-   * hubungan sebab-akibat,
-   * insight penting.
+Contoh BURUK (terlalu pendek, tidak menjelaskan apa-apa):
+  ★ Penting untuk dipahami
+  ★ Bisa diterapkan sehari-hari
+  ★ Membantu produktivitas
 
-5. Hindari:
+Contoh BAIK (langsung ke ide, tanpa embel-embel):
+  ★ Otak tidak membedakan kebiasaan baik dan buruk — keduanya dikuatkan lewat pengulangan. Makanya menghapus kebiasaan buruk lebih sulit dari sekadar "berniat berhenti".
+  ★ Willpower adalah sumber daya terbatas yang habis — sistem dan lingkungan lebih andal daripada tekad.
+  ★ Setiap keputusan kecil menciptakan "bukti identitas" — seseorang yang rutin olahraga bukan karena punya tujuan, tapi karena sudah melihat dirinya sebagai orang yang aktif.
 
-   * kalimat panjang,
-   * detail teknis kecil,
-   * penjelasan naratif,
-   * pengulangan topik.
+DILARANG memulai dengan: "Penulis berargumen...", "Menurut buku...", "Buku ini menjelaskan..."
+Langsung tulis idenya.
 
 ==================================================
 ATURAN PENAMAAN
 ===============
 
 1. Gunakan Bahasa Indonesia
+2. Cabang utama & sub-cabang: 2–5 kata, konkret dan spesifik
+3. Hindari label generik: "Pendahuluan", "Bab 1", "Konsep Dasar", "Kesimpulan"
+4. Gunakan nama yang menggambarkan ISI, bukan POSISI dalam buku
 
-2. Label maksimal 2-5 kata
+==================================================
+PRIORITAS KONTEN
+================
 
-3. Gunakan kata konkret dan jelas
+Utamakan:
+* Ide dan klaim utama buku
+* Framework atau model mental yang ditawarkan
+* Hubungan sebab-akibat yang dijelaskan buku
+* Ide yang berlawanan dengan intuisi umum (counter-intuitive)
+* Proses atau metode inti
 
-4. Hindari label generik seperti:
-
-   * "Pendahuluan"
-   * "Lainnya"
-   * "Kesimpulan umum"
-
-5. Gunakan label yang benar-benar menjelaskan isi topik
+Hindari:
+* Anekdot atau contoh ilustrasi spesifik
+* Detail teknis kecil
+* Topik yang hanya jadi latar belakang
 
 ==================================================
 KUALITAS HASIL
 ==============
 
-Mindmap harus:
-
-* ringkas,
-* padat informasi,
-* mudah divisualisasikan,
-* dan tetap mudah dipahami tanpa membaca buku penuh.
+Setelah membaca mindmap ini, pembaca harus bisa berkata:
+* "Oh, jadi intinya gitu"
+* "Buku ini cocok / tidak cocok untuk saya karena ___"
+* "Ini berbeda dari yang sudah saya tahu karena ___"
 
 ==================================================
 KONTEKS TAMBAHAN USER
@@ -121,26 +130,21 @@ Output HARUS hanya berupa syntax Mermaid mindmap valid.
 Jangan tambahkan penjelasan tambahan.
 """
 
-MINDMAP_FROM_CONTENT_PROMPT = """Anda adalah ahli visualisasi pengetahuan dan penyusun mindmap edukatif.
+MINDMAP_FROM_CONTENT_PROMPT = """Anda adalah kurator buku dan ahli visualisasi pengetahuan.
 
-Tugas Anda adalah membaca isi buku lalu merangkum inti pembahasannya menjadi mindmap Mermaid yang:
-
-* padat,
-* mudah dipahami,
-* fokus pada insight penting,
-* dan menampilkan hubungan antar konsep utama.
+Tugas Anda adalah membaca isi buku lalu merangkumnya menjadi mindmap Mermaid yang membantu
+pembaca memutuskan apakah buku ini layak mereka baca — sebelum membuka satu halaman pun.
 
 ==================================================
 TUJUAN
 ======
 
-Buat mindmap yang:
+Buat mindmap yang menjawab dua pertanyaan kritis pembaca:
+1. "Buku ini sebenarnya membahas apa?"
+2. "Apa yang akan saya pahami atau bisa saya lakukan setelah membaca ini?"
 
-1. Menjelaskan gambaran besar topik
-2. Menampilkan ide paling penting
-3. Menghubungkan konsep utama
-4. Memudahkan pembelajaran cepat
-5. Fokus pada poin aktual dan bernilai
+Mindmap harus membuat pembaca berkata "oh, jadi intinya gitu" di setiap node —
+bukan sekadar melihat daftar topik tanpa makna.
 
 ==================================================
 ATURAN FORMAT
@@ -149,55 +153,88 @@ ATURAN FORMAT
 Gunakan format Mermaid berikut:
 
 mindmap
-root((Judul))
-Cabang Utama
-Sub Topik
+  root((Judul Buku))
+    Cabang Utama
+      Sub Topik
+        Insight Node
 
 ==================================================
 ATURAN STRUKTUR
 ===============
 
-1. Maksimal 5 level:
+1. 4 level:
+   * Level 1 — Root: judul buku
+   * Level 2 — Cabang utama: tema besar (2–4 kata)
+   * Level 3 — Sub-cabang: konsep atau ide spesifik (2–5 kata)
+   * Level 4 — Insight Node (★): WAJIB ada di setiap sub-cabang,
+     berisi penjelasan inti ide dalam 1–2 kalimat
 
-   * Root
-   * Cabang utama
-   * Sub-cabang
+2. Cabang utama: minimal 4, maksimal 8
 
-2. Cabang utama:
+3. Sub-cabang per cabang: 2–4, pilih yang paling membentuk inti buku
 
-   * Minimal 4
-   * Maksimal 7
+4. Setiap sub-cabang WAJIB punya tepat 1 Insight Node (★)
 
-3. Sub-cabang:
+==================================================
+ATURAN INSIGHT NODE (★)
+=======================
 
-   * Maksimal 4 per cabang
-   * Hanya poin paling penting
+Ini adalah bagian terpenting. Insight Node HARUS:
 
-4. Prioritaskan:
+1. Dimulai dengan "★ "
+2. Menjelaskan inti ide dari sub-cabang tersebut dalam 1–2 kalimat
+3. Menjawab salah satu dari:
+   - "Apa inti dari konsep ini?"
+   - "Mengapa ini penting?"
+   - "Bagaimana cara kerjanya?"
+4. Boleh berbentuk paragraf mini — kejelasan lebih penting dari singkatnya
 
-   * konsep inti,
-   * metode,
-   * strategi,
-   * framework,
-   * alur proses,
-   * insight praktis,
-   * hubungan antar topik.
+Contoh BURUK (terlalu pendek, tidak menjelaskan apa-apa):
+  ★ Penting untuk dipahami
+  ★ Bisa diterapkan sehari-hari
+  ★ Membantu produktivitas
 
-5. Hindari:
+Contoh BAIK (langsung ke ide, tanpa embel-embel):
+  ★ Otak tidak membedakan kebiasaan baik dan buruk — keduanya dikuatkan lewat pengulangan. Makanya menghapus kebiasaan buruk lebih sulit dari sekadar "berniat berhenti".
+  ★ Willpower adalah sumber daya terbatas yang habis — sistem dan lingkungan lebih andal daripada tekad.
+  ★ Setiap keputusan kecil menciptakan "bukti identitas" — seseorang yang rutin olahraga bukan karena punya tujuan, tapi karena sudah melihat dirinya sebagai orang yang aktif.
 
-   * detail kecil,
-   * contoh terlalu spesifik,
-   * pengulangan,
-   * narasi panjang.
+DILARANG memulai dengan: "Penulis berargumen...", "Menurut buku...", "Buku ini menjelaskan..."
+Langsung tulis idenya.
 
 ==================================================
 ATURAN PENAMAAN
 ===============
 
 1. Gunakan Bahasa Indonesia
-2. Label singkat (2-5 kata)
-3. Mudah dipahami
-4. Hindari istilah terlalu umum
+2. Cabang utama & sub-cabang: 2–5 kata, konkret dan spesifik
+3. Hindari label generik: "Pendahuluan", "Bab 1", "Konsep Dasar", "Kesimpulan"
+4. Gunakan nama yang menggambarkan ISI, bukan POSISI dalam buku
+
+==================================================
+PRIORITAS KONTEN
+================
+
+Utamakan:
+* Ide dan klaim utama buku
+* Framework atau model mental yang ditawarkan
+* Hubungan sebab-akibat yang dijelaskan buku
+* Ide yang berlawanan dengan intuisi umum (counter-intuitive)
+* Proses atau metode inti
+
+Hindari:
+* Anekdot atau contoh ilustrasi spesifik
+* Detail teknis kecil
+* Topik yang hanya jadi latar belakang
+
+==================================================
+KUALITAS HASIL
+==============
+
+Setelah membaca mindmap ini, pembaca harus bisa berkata:
+* "Oh, jadi intinya gitu"
+* "Buku ini cocok / tidak cocok untuk saya karena ___"
+* "Ini berbeda dari yang sudah saya tahu karena ___"
 
 ==================================================
 KONTEKS TAMBAHAN USER
@@ -225,9 +262,10 @@ Output HARUS hanya berupa Mermaid mindmap valid.
 Jangan tambahkan penjelasan.
 """
 
-MINDMAP_EDIT_PROMPT = """Anda adalah editor dan penyempurna mindmap profesional.
+MINDMAP_EDIT_PROMPT = """Anda adalah editor mindmap profesional yang fokus pada kedalaman pemahaman pembaca.
 
-Tugas Anda adalah memodifikasi mindmap Mermaid berdasarkan instruksi user tanpa merusak struktur utama.
+Tugas Anda adalah memodifikasi mindmap Mermaid berdasarkan instruksi user,
+dengan tetap memastikan setiap node akhir benar-benar menjelaskan inti ide — bukan sekadar label.
 
 ==================================================
 MINDMAP SAAT INI
@@ -245,30 +283,43 @@ INSTRUKSI USER
 ATURAN EDIT
 ===========
 
-1. Pertahankan struktur inti mindmap
+1. Pertahankan struktur inti mindmap (4 level)
 2. Tambah, ubah, atau hapus node sesuai instruksi
-3. Pastikan hasil tetap rapi dan mudah dipahami
-4. Fokus pada poin paling penting
-5. Hindari node berlebihan
-6. Maksimal 3 level kedalaman
-7. Maksimal 5 kata per label
-8. Gunakan Bahasa Indonesia
+3. Setiap sub-cabang tetap WAJIB punya Insight Node (★)
+4. Maksimal 4 level kedalaman
+5. Label cabang & sub-cabang: maksimal 5 kata
+6. Gunakan Bahasa Indonesia
 
 ==================================================
-KUALITAS HASIL
-==============
+STANDAR INSIGHT NODE (★)
+========================
 
-Mindmap akhir harus:
+Insight Node HARUS menjelaskan ide atau argumen inti dalam 1–2 kalimat.
+Bukan action label, bukan generik.
 
-* lebih jelas,
-* lebih informatif,
-* lebih terstruktur,
-* dan lebih mudah divisualisasikan.
+Contoh BURUK:
+  ★ Memahami konsep ini lebih baik
+  ★ Bisa diterapkan sehari-hari
+
+Contoh BAIK (langsung ke ide):
+  ★ Motivasi mengikuti tindakan, bukan mendahuluinya —
+    jadi menunggu "mood yang tepat" sebelum mulai justru menjebak.
+  ★ Sistem dua langkah ini bekerja karena memisahkan pengambilan keputusan
+    dari eksekusi, sehingga otak tidak kelelahan saat bertindak.
+
+DILARANG memulai dengan: "Penulis berargumen...", "Menurut buku...", "Buku ini menjelaskan..."
+Langsung tulis idenya.
 
 ==================================================
 OUTPUT
-======
+=======
 
-Output HARUS hanya berupa Mermaid mindmap valid.
+Output HARUS berupa JSON valid dengan struktur:
+{{
+  "title": "Judul Mindmap (maksimal 5 kata)",
+  "mermaid": "kode mindmap mermaid saja, tanpa markdown code block",
+  "sources": []
+}}
+
 Jangan tambahkan penjelasan lain.
 """

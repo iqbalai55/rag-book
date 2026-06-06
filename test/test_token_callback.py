@@ -22,17 +22,17 @@ class TestTokenUsageCallbackHandler:
     def test_init(self):
         handler = TokenUsageCallbackHandler(
             session_id="s1",
-            course_id="c1",
+            book_id="b1",
             feature="test",
         )
         assert handler.session_id == "s1"
-        assert handler.course_id == "c1"
+        assert handler.book_id == "b1"
         assert handler.feature == "test"
 
     def test_init_defaults(self):
         handler = TokenUsageCallbackHandler()
         assert handler.session_id is None
-        assert handler.course_id is None
+        assert handler.book_id is None
         assert handler.feature == "unknown"
 
     def test_set_context_session_id(self):
@@ -40,10 +40,10 @@ class TestTokenUsageCallbackHandler:
         handler.set_context(session_id="new_session")
         assert handler.session_id == "new_session"
 
-    def test_set_context_course_id(self):
+    def test_set_context_book_id(self):
         handler = TokenUsageCallbackHandler()
-        handler.set_context(course_id="new_course")
-        assert handler.course_id == "new_course"
+        handler.set_context(book_id="new_book")
+        assert handler.book_id == "new_book"
 
     def test_set_context_feature(self):
         handler = TokenUsageCallbackHandler()
@@ -98,10 +98,10 @@ class TestCreateTokenCallback:
     def test_factory_creates_handler(self):
         handler = create_token_callback(
             session_id="s1",
-            course_id="c1",
+            book_id="b1",
             feature="test",
         )
         assert isinstance(handler, TokenUsageCallbackHandler)
         assert handler.session_id == "s1"
-        assert handler.course_id == "c1"
+        assert handler.book_id == "b1"
         assert handler.feature == "test"

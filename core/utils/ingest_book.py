@@ -17,13 +17,13 @@ logger = logging.getLogger(__name__)
 def ingest_book(
     pdf_path: str,
     qdrant_db: QdrantDB,
-    course_id: str,
+    book_id: str,
     embed_model_id: str = "sentence-transformers/all-MiniLM-L6-v2",
     max_tokens: int = 256,
     extra_metadata: Optional[Dict] = None,
 ) -> None:
 
-    logger.info(f"🚀 Ingesting {pdf_path} into course '{course_id}'")
+    logger.info(f"🚀 Ingesting {pdf_path} into book '{book_id}'")
 
     tokenizer = AutoTokenizer.from_pretrained(embed_model_id)
     chunker = HybridChunker(tokenizer=tokenizer)
@@ -46,7 +46,7 @@ def ingest_book(
         # MULTITENANT ENFORCEMENT
         # -----------------------------
         metadata.update({
-            "course_id": course_id
+            "book_id": book_id
         })
 
         if extra_metadata:
@@ -59,10 +59,10 @@ def ingest_book(
 
     logger.info("📦 Indexing into Qdrant Cloud...")
 
-    # 🔥 IMPORTANT: use per-course collection (recommended)
+    # 🔥 IMPORTANT: use per-book partition (recommended)
     qdrant_db.add_documents(
         chunks=enriched_docs,
-        course_id=course_id
+        book_id=book_id
     )
 
     logger.info("✅ Ingestion complete")
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     ingest_book(
         pdf_path=pdf_path,
         qdrant_db=qdrant_db,
-        course_id="refactoring_book",
+        book_id="refactoring_book",
         extra_metadata={
             "module_id": "m1",
             "source": "pdf"

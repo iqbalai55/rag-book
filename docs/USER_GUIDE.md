@@ -24,7 +24,7 @@ The server will start at `http://127.0.0.1:8001`
 Use the ingest endpoint to upload a PDF:
 
 ```bash
-curl -X POST "http://localhost:8001/book-qa/ingest?course_id=my_book" \
+curl -X POST "http://localhost:8001/book-qa/ingest?book_id=my_book" \
   -H "x-api-key: your_api_key" \
   -F "file=@path/to/your/book.pdf"
 ```
@@ -42,7 +42,7 @@ curl -N http://localhost:8001/book-qa/stream \
   -H "x-api-key: your_api_key" \
   -d '{
     "session_id": "session_1",
-    "course_id": "my_book",
+    "book_id": "my_book",
     "messages": [{"role": "user", "content": "What is the main topic of this book?"}]
   }'
 ```
@@ -51,10 +51,10 @@ curl -N http://localhost:8001/book-qa/stream \
 
 ## Key Concepts
 
-### Course ID
-A unique identifier for each book/course. All content from one book shares the same `course_id`. This ensures:
+### Book ID
+A unique identifier for each book. All content from one book shares the same `book_id`. This ensures:
 - Data isolation between different books
-- You can chat with specific books by specifying their course_id
+- You can chat with specific books by specifying their book_id
 
 ### Session ID
 A identifier for a conversation thread. The system remembers your conversation within the same session.
@@ -95,13 +95,13 @@ Generate a comprehensive summary of the entire book.
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8001/book-qa/summarize?course_id=my_book" \
+curl -X POST "http://localhost:8001/book-qa/summarize?book_id=my_book" \
   -H "x-api-key: your_api_key"
 ```
 
 **With custom instructions:**
 ```bash
-curl -X POST "http://localhost:8001/book-qa/summarize?course_id=my_book&user_prompt=Fokus ke aspek teknis" \
+curl -X POST "http://localhost:8001/book-qa/summarize?book_id=my_book&user_prompt=Fokus ke aspek teknis" \
   -H "x-api-key: your_api_key"
 ```
 
@@ -117,13 +117,13 @@ Generate a visual mind map diagram showing the book's structure and main topics.
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8001/book-qa/mindmap?course_id=my_book" \
+curl -X POST "http://localhost:8001/book-qa/mindmap?book_id=my_book" \
   -H "x-api-key: your_api_key"
 ```
 
 **With custom focus:**
 ```bash
-curl -X POST "http://localhost:8001/book-qa/mindmap?course_id=my_book&user_prompt=Fokus ke design patterns" \
+curl -X POST "http://localhost:8001/book-qa/mindmap?book_id=my_book&user_prompt=Fokus ke design patterns" \
   -H "x-api-key: your_api_key"
 ```
 
@@ -145,7 +145,7 @@ Generate multiple-choice (MCQ) and essay questions from the book content.
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8001/book-qa/dataset?course_id=my_book&difficulty=medium&num_mcq=5&num_essay=3" \
+curl -X POST "http://localhost:8001/book-qa/dataset?book_id=my_book&difficulty=medium&num_mcq=5&num_essay=3" \
   -H "x-api-key: your_api_key"
 ```
 
@@ -167,7 +167,7 @@ curl -X POST "http://localhost:8001/book-qa/summarize/edit" \
   -H "Content-Type: application/json" \
   -H "x-api-key: your_api_key" \
   -d '{
-    "course_id": "my_book",
+    "book_id": "my_book",
     "title": "Current Title",
     "overview": "Current overview text...",
     "key_themes": ["Theme 1", "Theme 2"],
@@ -225,8 +225,8 @@ Each book/course is completely isolated:
 ```
 
 - One collection (`lms_content`) stores all books
-- Each chunk has a `course_id` metadata
-- Queries filter by `course_id` to ensure isolation
+- Each chunk has a `book_id` metadata
+- Queries filter by `book_id` to ensure isolation
 
 ---
 
@@ -261,7 +261,7 @@ Content-Type: application/json (for POST with body)
 ```json
 {
   "session_id": "unique_session_id",
-  "course_id": "my_book",
+  "book_id": "my_book",
   "messages": [
     {"role": "user", "content": "Your question here"}
   ]
@@ -327,8 +327,8 @@ LANGSMITH_API_KEY=your_langsmith_key
 - Include header `-H "x-api-key: your_api_key"` in requests
 
 **2. "No content found for this course"**
-- First upload a book with the `course_id` using `/book-qa/ingest`
-- Check the `course_id` matches exactly (case-sensitive)
+- First upload a book with the `book_id` using `/book-qa/ingest`
+- Check the `book_id` matches exactly (case-sensitive)
 
 **3. Rate limit exceeded (429)**
 - Wait and retry after a minute

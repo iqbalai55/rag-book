@@ -26,13 +26,15 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
 
     def __init__(
         self,
+        user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        course_id: Optional[str] = None,
+        book_id: Optional[str] = None,
         feature: Optional[str] = None,
     ):
         super().__init__()
+        self.user_id = user_id
         self.session_id = session_id
-        self.course_id = course_id
+        self.book_id = book_id
         self.feature = feature or "unknown"
         self.tracker = TokenTracker()
         self._start_times: Dict[UUID, float] = {}
@@ -142,40 +144,46 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
             provider = "openrouter"
 
         self.tracker.record(
+            user_id=self.user_id,
             model=model,
             provider=provider,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             feature=self.feature,
             session_id=self.session_id,
-            course_id=self.course_id,
+            book_id=self.book_id,
             latency_ms=latency_ms,
             metadata=metadata,
         )
 
     def set_context(
         self,
+        user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        course_id: Optional[str] = None,
+        book_id: Optional[str] = None,
         feature: Optional[str] = None,
     ):
         """Update context for the callback handler."""
+        if user_id is not None:
+            self.user_id = user_id
         if session_id is not None:
             self.session_id = session_id
-        if course_id is not None:
-            self.course_id = course_id
+        if book_id is not None:
+            self.book_id = book_id
         if feature is not None:
             self.feature = feature
 
 
 def create_token_callback(
+    user_id: Optional[str] = None,
     session_id: Optional[str] = None,
-    course_id: Optional[str] = None,
+    book_id: Optional[str] = None,
     feature: Optional[str] = None,
 ) -> TokenUsageCallbackHandler:
     """Factory function to create a configured token callback handler."""
     return TokenUsageCallbackHandler(
+        user_id=user_id,
         session_id=session_id,
-        course_id=course_id,
+        book_id=book_id,
         feature=feature,
     )

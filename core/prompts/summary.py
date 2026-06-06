@@ -12,7 +12,10 @@ ATURAN:
 2. Ringkasan harus padat tapi informatif (maksimal 3-4 kalimat)
 3. Sertakan 3-5 poin penting dari chapter ini
 4. Fokus pada konsep inti, definisi, dan contoh penting
-5. Output HARUS valid JSON sesuai schema ChapterSummary
+5. Setiap key_point harus menjawab: "Apa yang akan saya pahami/setelah membaca ini?"
+   Bukan hanya "apa topiknya". Format: "Membahas X → sehingga pembaca bisa memahami/menggunakan Y"
+6. Sertakan 1-2 contoh konkret yang akan pembaca pelajari
+7. Output HARUS valid JSON sesuai schema ChapterSummary
 {user_prompt_section}
 
 Contoh JSON yang diharapkan:
@@ -35,10 +38,13 @@ Topik Buku: {topic}
 ATURAN:
 1. Gunakan Bahasa Indonesia
 2. Buat overview yang menjelaskan tujuan dan cakupan buku secara keseluruhan
-3. Identifikasi 3-5 tema utama yang muncul di seluruh buku
-4. Berikan judul yang representatif untuk ringkasan ini
-5. Overview maksimal 5-6 kalimat
-6. Output HARUS valid JSON sesuai schema BookSummaryResponse
+3. Overview harus menjawab: "Apa nilai buku ini bagi saya?" bukan hanya "tentang apa buku ini"
+4. Identifikasi 3-5 tema utama yang muncul di seluruh buku
+5. Setiap tema harus menjelaskan: topik apa + insight apa yang pembaca dapat
+   Format: "Tema: X → Pembaca akan memahami/menggunakan Y"
+6. Berikan judul yang representatif untuk ringkasan ini
+7. Overview maksimal 5-6 kalimat
+8. Output HARUS valid JSON sesuai schema BookSummaryResponse
 {user_prompt_section}
 
 Contoh JSON yang diharapkan:

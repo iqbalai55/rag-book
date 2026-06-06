@@ -16,7 +16,7 @@
 - snake_case (e.g., `extract_pages`, `llm_detect_toc`, `get_chat_model`, `with_structured_output`)
 
 **Variables:**
-- snake_case (e.g., `course_id`, `embedding_model`, `page_content`)
+- snake_case (e.g., `book_id`, `embedding_model`, `page_content`)
 - Private/internal: underscore prefix (e.g., `_invoke_with_retry`, `_detect_vector_size`)
 
 **Constants:**

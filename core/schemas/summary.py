@@ -16,7 +16,7 @@ class ChapterSummary(BaseModel):
 
 
 class BookSummaryResponse(BaseModel):
-    course_id: str = Field(..., description="Course identifier")
+    book_id: str = Field(..., description="Book identifier")
     title: str = Field(..., description="Book summary title")
     overview: str = Field(..., description="Book overview")
     chapters: List[ChapterSummary] = Field(..., description="Chapter summaries")
@@ -40,7 +40,8 @@ class BookSummaryResponse(BaseModel):
 
 
 class SummaryEditRequest(BaseModel):
-    course_id: str = Field(..., description="Course identifier")
+    user_id: str = Field(..., description="User identifier")
+    book_id: str = Field(..., description="Book identifier")
     title: str = Field(..., description="Current summary title")
     overview: str = Field(..., description="Current summary overview")
     key_themes: List[str] = Field(..., description="Current key themes")
@@ -49,7 +50,7 @@ class SummaryEditRequest(BaseModel):
 
 
 class SummaryEditResponse(BaseModel):
-    course_id: str = Field(description="Course identifier")
+    book_id: str = Field(description="Book identifier")
     title: str = Field(description="Modified title")
     overview: str = Field(description="Modified overview")
     key_themes: List[str] = Field(description="Modified key themes")

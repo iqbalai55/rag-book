@@ -26,17 +26,83 @@ from core.prompts.expertise import (
 logger = logging.getLogger(__name__)
 
 
+def _split_sources_by_page(sources_with_pages: List[tuple]) -> List[str]:
+    """
+    Format sources with page ranges, splitting non-consecutive pages into separate entries.
+    Input: [("Docker in Practice", [275, 301], "https://...pdf")]
+    Output: ["[Docker in Practice (halaman 275)](https://...pdf#page=275)",
+             "[Docker in Practice (halaman 301)](https://...pdf#page=301)"]
+
+    Input: [("Docker in Practice", [275, 276, 301], "https://...pdf")]
+    Output: ["[Docker in Practice (halaman 275-276)](https://...pdf#page=275)",
+             "[Docker in Practice (halaman 301)](https://...pdf#page=301)"]
+    """
+    result = []
+    for item in sources_with_pages:
+        source = item[0]
+        pages = item[1] if len(item) > 1 else []
+        url = item[2] if len(item) > 2 else ""
+
+        if not pages:
+            result.append(source)
+            continue
+
+        sorted_pages = sorted(set(pages))
+        ranges = []
+        start = sorted_pages[0]
+        end = sorted_pages[0]
+
+        for page in sorted_pages[1:]:
+            if page == end + 1:
+                end = page
+            else:
+                if start == end:
+                    ranges.append((start, start))
+                else:
+                    ranges.append((start, end))
+                start = end = page
+
+        if start == end:
+            ranges.append((start, start))
+        else:
+            ranges.append((start, end))
+
+        for range_start, range_end in ranges:
+            if range_start == range_end:
+                page_ref = f"{source} (halaman {range_start})"
+            else:
+                page_ref = f"{source} (halaman {range_start}-{range_end})"
+
+            if url:
+                # Fix common typo in stored URLs: supbase.co -> supabase.co
+                fixed_url = url.replace("supbase.co", "supabase.co")
+                result.append(f"[{page_ref}]({fixed_url}#page={range_start})")
+            else:
+                result.append(page_ref)
+
+    return result
+
+
 class BookQdrantAgent:
     """Book Agent that uses QdrantDB for RAG retrieval."""
 
-    def __init__(self, qdrant_db: QdrantDB, course_id: str, checkpointer=None, k: int = 3):
+    def __init__(
+        self,
+        qdrant_db: QdrantDB,
+        book_id: str,
+        user_id: str = None,
+        checkpointer=None,
+        k: int = 3,
+    ):
         self.qdrant_db = qdrant_db
         self.k = k
-        self.course_id = course_id
+        self.book_id = book_id
+        self.user_id = user_id
 
         # Token tracking callback
         self.token_callback = TokenUsageCallbackHandler(
-            course_id=course_id,
+            user_id=user_id,
+            book_id=book_id,
             feature="agent_reasoning",
         )
         self.token_tracker = TokenTracker()
@@ -47,7 +113,7 @@ class BookQdrantAgent:
         # Detect expertise from book content
         self.expertise = self._detect_expertise()
         logger.info(
-            f"Detected expertise for '{course_id}': {self.expertise.domain} - "
+            f"Detected expertise for '{book_id}': {self.expertise.domain} - "
             f"{self.expertise.sub_fields}"
         )
 
@@ -175,13 +241,13 @@ class BookQdrantAgent:
 
     def _detect_expertise(self) -> ExpertiseDetection:
         """Detect book domain from content samples."""
-        docs = self.qdrant_db.get_all_by_course(self.course_id, limit=5)
+        docs = self.qdrant_db.get_all_by_book(self.book_id, limit=5)
 
         if not docs:
             return ExpertiseDetection(
                 domain="Umum",
                 sub_fields=[],
-                expertise_prompt="tutor ahli yang menguasai materi dalam course ini",
+                expertise_prompt="tutor ahli yang menguasai materi dalam buku ini",
                 book_type="unknown",
             )
 
@@ -190,7 +256,7 @@ class BookQdrantAgent:
         llm = get_chat_model()
         structured_llm = llm.with_structured_output(ExpertiseDetection)
         prompt = EXPERTISE_DETECTION_PROMPT.format(
-            context=context, topik=self.course_id
+            context=context, topik=self.book_id
         )
 
         try:
@@ -201,7 +267,7 @@ class BookQdrantAgent:
             return ExpertiseDetection(
                 domain="Umum",
                 sub_fields=[],
-                expertise_prompt="tutor ahli yang menguasai materi dalam course ini",
+                expertise_prompt="tutor ahli yang menguasai materi dalam buku ini",
                 book_type="unknown",
             )
 
@@ -210,7 +276,7 @@ class BookQdrantAgent:
 
         retrieved_docs: List[Document] = self.qdrant_db.query(
             topic,
-            course_id=self.course_id,  
+            book_id=self.book_id,
             k=self.k
         )
 
@@ -224,7 +290,7 @@ class BookQdrantAgent:
             )
 
         merged_context = []
-        sources = []
+        sources_raw = []
         seen_texts = set()
 
         for doc in retrieved_docs:
@@ -246,7 +312,6 @@ class BookQdrantAgent:
             storage_url = doc.metadata.get("storage_url", "")
             pages_str = ", ".join(map(str, pages)) if pages else "-"
 
-            # Build page-specific URL for LLM reference
             page_url = ""
             if storage_url and pages:
                 page_url = f"{storage_url}#page={pages[0]}"
@@ -256,10 +321,11 @@ class BookQdrantAgent:
                 f"Content:\n{text}"
             )
 
-            sources.append(f"{source} (hal {pages_str})")
+            sources_raw.append((source, pages, storage_url))
             seen_texts.add(text)
 
-        return "\n\n".join(merged_context), retrieved_docs, list(set(sources))
+        sources = _split_sources_by_page(sources_raw)
+        return "\n\n".join(merged_context), retrieved_docs, sources
 
     def ask(self, query: str, session_id: str = "book_thread"):
         config = {"configurable": {"thread_id": session_id}}

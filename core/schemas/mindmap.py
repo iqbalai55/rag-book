@@ -12,7 +12,7 @@ class MindmapNode(BaseModel):
 class MindmapResponse(BaseModel):
     title: str = Field(description="Mindmap root title")
     mermaid: str = Field(description="Mermaid mindmap syntax")
-    sources: List[str] = Field(description="Source references")
+    sources: List[str] = Field(default=[], description="Source references")
 
     @field_validator("sources", mode="before")
     @classmethod
@@ -22,12 +22,19 @@ class MindmapResponse(BaseModel):
         return v
 
 
+class MindmapEditData(BaseModel):
+    title: str = Field(description="Mindmap root title")
+    mermaid: str = Field(description="Mermaid mindmap syntax")
+
+
 class MindmapEditRequest(BaseModel):
-    course_id: str = Field(..., description="Course identifier")
+    user_id: str = Field(..., description="User identifier")
+    book_id: str = Field(..., description="Book identifier")
     mermaid: str = Field(..., description="Existing mermaid mindmap to edit")
     instruction: str = Field(..., description="Edit instructions")
 
 
 class MindmapEditResponse(BaseModel):
-    course_id: str = Field(description="Course identifier")
+    book_id: str = Field(description="Book identifier")
+    title: str = Field(description="Mindmap title")
     mermaid: str = Field(description="Modified mermaid mindmap")

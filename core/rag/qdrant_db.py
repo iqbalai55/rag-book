@@ -24,10 +24,16 @@ class QdrantDB:
         collection_name: str,
         embedding_model,
         client: Optional[QdrantClient] = None,
+        reranker: Optional[object] = None,
+        retrieval_k: int = 20,
+        final_k: int = 5,
     ):
         self.client = client if client is not None else QdrantClient(":memory:")
         self.collection_name = collection_name
         self.embedding_model = embedding_model
+        self.reranker = reranker
+        self.retrieval_k = retrieval_k
+        self.final_k = final_k
 
         vector_size = self._detect_vector_size(embedding_model)
 
@@ -77,7 +83,7 @@ class QdrantDB:
         try:
             self.client.create_payload_index(
                 collection_name=self.collection_name,
-                field_name="metadata.course_id",
+                field_name="metadata.book_id",
                 field_schema="keyword",
             )
         except Exception as e:
@@ -87,25 +93,25 @@ class QdrantDB:
     # CORE METHODS
     # -------------------------
 
-    def add_documents(self, chunks: List[Dict], course_id: Optional[str] = None):
+    def add_documents(self, chunks: List[Dict], book_id: Optional[str] = None):
         """
         Add documents with enforced multitenancy metadata.
 
         Args:
             chunks: list of {"text": ..., "metadata": {...}}
-            course_id: optional global course_id to inject
+            book_id: optional global book_id to inject
         """
         docs = []
 
         for c in chunks:
             metadata = c.get("metadata", {})
 
-            # ✅ enforce course_id
-            if course_id:
-                metadata["course_id"] = course_id
+            # ✅ enforce book_id
+            if book_id:
+                metadata["book_id"] = book_id
 
-            if "course_id" not in metadata:
-                raise ValueError("Missing 'course_id' in metadata")
+            if "book_id" not in metadata:
+                raise ValueError("Missing 'book_id' in metadata")
 
             docs.append(Document(page_content=c["text"], metadata=metadata))
 
@@ -122,27 +128,29 @@ class QdrantDB:
     def query(
         self,
         query_text: str,
-        course_id: Optional[str] = None,
+        book_id: Optional[str] = None,
         k: int = 5,
         extra_filters: Optional[Dict[str, str]] = None,
+        use_reranker: bool = False,
     ) -> List[Document]:
         """
         Multitenant query with optional filtering.
 
         Args:
             query_text: user query
-            course_id: filter by course
+            book_id: filter by book
             k: top-k
             extra_filters: additional metadata filters
+            use_reranker: whether to use cross-encoder reranking
         """
 
         conditions = []
 
-        if course_id:
+        if book_id:
             conditions.append(
                 FieldCondition(
-                    key="metadata.course_id",
-                    match=MatchValue(value=course_id),
+                    key="metadata.book_id",
+                    match=MatchValue(value=book_id),
                 )
             )
 
@@ -157,11 +165,26 @@ class QdrantDB:
 
         qdrant_filter = Filter(must=conditions) if conditions else None
 
-        results = self.vectorstore.similarity_search(
-            query_text,
-            k=k,
-            filter=qdrant_filter,
-        )
+        if use_reranker and self.reranker is not None:
+            candidates = self.vectorstore.similarity_search(
+                query_text,
+                k=self.retrieval_k,
+                filter=qdrant_filter,
+            )
+
+            if candidates:
+                ranked_docs, _ = self.reranker.rerank(
+                    query_text, candidates, top_k=self.final_k
+                )
+                results = ranked_docs[:k]
+            else:
+                results = []
+        else:
+            results = self.vectorstore.similarity_search(
+                query_text,
+                k=k,
+                filter=qdrant_filter,
+            )
 
         logger.info(f"Query returned {len(results)} results")
         return results
@@ -170,8 +193,8 @@ class QdrantDB:
     # RETRIEVE ALL BY COURSE
     # -------------------------
 
-    def get_all_by_course(self, course_id: str, limit: int = 100) -> List[Document]:
-        """Retrieve ALL chunks for a course using scroll API."""
+    def get_all_by_book(self, book_id: str, limit: int = 100) -> List[Document]:
+        """Retrieve ALL chunks for a book using scroll API."""
         all_docs = []
         offset = None
 
@@ -181,8 +204,8 @@ class QdrantDB:
                 scroll_filter=Filter(
                     must=[
                         FieldCondition(
-                            key="metadata.course_id",
-                            match=MatchValue(value=course_id),
+                            key="metadata.book_id",
+                            match=MatchValue(value=book_id),
                         )
                     ]
                 ),
@@ -204,7 +227,7 @@ class QdrantDB:
             if offset is None:
                 break
 
-        logger.info(f"Retrieved {len(all_docs)} chunks for course: {course_id}")
+        logger.info(f"Retrieved {len(all_docs)} chunks for book: {book_id}")
         return all_docs
 
     # -------------------------
@@ -221,20 +244,20 @@ class QdrantDB:
         else:
             logger.warning("No IDs provided for deletion.")
 
-    def delete_by_course(self, course_id: str):
-        """Delete all data for a course."""
+    def delete_by_book(self, book_id: str):
+        """Delete all data for a book."""
         self.client.delete(
             collection_name=self.collection_name,
             points_selector=Filter(
                 must=[
                     FieldCondition(
-                        key="metadata.course_id",
-                        match=MatchValue(value=course_id),
+                        key="metadata.book_id",
+                        match=MatchValue(value=book_id),
                     )
                 ]
             ),
         )
-        logger.info(f"Deleted all documents for course '{course_id}'")
+        logger.info(f"Deleted all documents for book '{book_id}'")
 
     # -------------------------
     # COLLECTION MANAGEMENT

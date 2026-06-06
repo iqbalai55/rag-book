@@ -7,7 +7,7 @@
 **Overall:** Multi-tenant RAG (Retrieval Augmented Generation) system with LangGraph agents
 
 **Key Characteristics:**
-- Multi-tenant architecture with course-level isolation via `course_id` payload filtering in Qdrant
+- Multi-tenant architecture with course-level isolation via `book_id` payload filtering in Qdrant
 - LangGraph-based agents with tool execution for RAG, MCQ generation, essay generation, and podcast synthesis
 - Hierarchical map-reduce pattern for book-level operations (summarize, mindmap, dataset generation)
 - Streaming Server-Sent Events (SSE) for real-time agent responses
@@ -57,18 +57,18 @@
 1. Client POSTs PDF to `/book-qa/ingest`
 2. `SupabaseStorage.upload_pdf()` stores PDF in Supabase Storage
 3. `ingest_book()` calls `DocumentProcessor.process_document()` to chunk PDF
-4. Chunks enriched with `course_id` are stored in Qdrant `lms_content` collection
+4. Chunks enriched with `book_id` are stored in Qdrant `lms_content` collection
 
 **Chat/QA Flow:**
-1. Client POSTs to `/book-qa/stream` with `course_id` and messages
-2. `CacheManager.get_agent(course_id)` returns or creates `BookQdrantAgent`
-3. Agent executes with `search_book_context` tool → `QdrantDB.query(course_id=...)`
+1. Client POSTs to `/book-qa/stream` with `book_id` and messages
+2. `CacheManager.get_agent(book_id)` returns or creates `BookQdrantAgent`
+3. Agent executes with `search_book_context` tool → `QdrantDB.query(book_id=...)`
 4. Response streamed via SSE with message types: `human`, `tool`, `internal`, `final`, `mcq`, `essay`, `error`
 5. `TokenUsageCallbackHandler` tracks token usage per feature/session
 
 **Summary/Mindmap/Dataset Flow:**
-1. Client POSTs to respective endpoint with `course_id`
-2. Service retrieves all documents via `QdrantDB.get_all_by_course()`
+1. Client POSTs to respective endpoint with `book_id`
+2. Service retrieves all documents via `QdrantDB.get_all_by_book()`
 3. For summaries/datasets: chapter identification via LLM → per-chapter summarization → map-reduce to final
 4. For mindmaps: direct LLM generation from full context
 
@@ -80,7 +80,7 @@
 - Pattern: Async lazy initialization with lock
 
 **QdrantDB:**
-- Purpose: Multitenant vector store with `course_id` payload filtering
+- Purpose: Multitenant vector store with `book_id` payload filtering
 - Location: `core/rag/qdrant_db.py`
 - Pattern: Wrapper around `QdrantVectorStore` with collection management
 

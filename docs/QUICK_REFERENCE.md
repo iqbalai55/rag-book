@@ -9,7 +9,7 @@ python scripts/main_fastapi.py
 
 ### Upload a Book
 ```bash
-curl -X POST "http://localhost:8001/book-qa/ingest?course_id=YOUR_COURSE_ID" \
+curl -X POST "http://localhost:8001/book-qa/ingest?book_id=YOUR_book_id" \
   -H "x-api-key: YOUR_API_KEY" \
   -F "file=@path/to/book.pdf"
 ```
@@ -21,7 +21,7 @@ curl -N http://localhost:8001/book-qa/stream \
   -H "x-api-key: YOUR_API_KEY" \
   -d '{
     "session_id": "s1",
-    "course_id": "YOUR_COURSE_ID",
+    "book_id": "YOUR_book_id",
     "messages": [{"role": "user", "content": "Your question?"}]
   }'
 ```
@@ -32,15 +32,15 @@ curl -N http://localhost:8001/book-qa/stream \
 
 | Action | Command |
 |--------|---------|
-| **Ingest PDF** | `POST /book-qa/ingest?course_id=X` + file |
+| **Ingest PDF** | `POST /book-qa/ingest?book_id=X` + file |
 | **Chat** | `POST /book-qa/stream` + ChatPayload |
-| **Summarize** | `POST /book-qa/summarize?course_id=X` |
+| **Summarize** | `POST /book-qa/summarize?book_id=X` |
 | **Edit Summary** | `POST /book-qa/summarize/edit` + SummaryEditRequest |
-| **Mind Map** | `POST /book-qa/mindmap?course_id=X` |
+| **Mind Map** | `POST /book-qa/mindmap?book_id=X` |
 | **Edit Mind Map** | `POST /book-qa/mindmap/edit` + MindmapEditRequest |
-| **Generate Quiz** | `POST /book-qa/dataset?course_id=X&difficulty=medium` |
-| **Token Usage** | `GET /token-usage?course_id=X` |
-| **Daily Usage** | `GET /token-usage/daily?course_id=X&days=7` |
+| **Generate Quiz** | `POST /book-qa/dataset?book_id=X&difficulty=medium` |
+| **Token Usage** | `GET /token-usage?book_id=X` |
+| **Daily Usage** | `GET /token-usage/daily?book_id=X&days=7` |
 | **Flush Tokens** | `POST /token-usage/flush` |
 
 ---
@@ -66,7 +66,7 @@ curl -N http://localhost:8001/book-qa/stream \
 ```json
 {
   "session_id": "string",
-  "course_id": "string",
+  "book_id": "string",
   "messages": [
     {"role": "user", "content": "string"}
   ]
@@ -76,7 +76,7 @@ curl -N http://localhost:8001/book-qa/stream \
 ### MindmapEditRequest
 ```json
 {
-  "course_id": "string",
+  "book_id": "string",
   "mermaid": "string (existing mermaid code)",
   "instruction": "string"
 }
@@ -85,7 +85,7 @@ curl -N http://localhost:8001/book-qa/stream \
 ### SummaryEditRequest
 ```json
 {
-  "course_id": "string",
+  "book_id": "string",
   "title": "string",
   "overview": "string",
   "key_themes": ["string"],
@@ -123,10 +123,10 @@ curl -N http://localhost:8001/book-qa/stream \
 
 ---
 
-## Common Course IDs by Example
+## Common Book IDs by Example
 
-| Book | course_id |
-|------|-----------|
+| Book | book_id |
+|------|---------|
 | Refactoring Book | `refactoring_book` |
 | Clean Architecture | `clean_arch` |
 | Design Patterns | `design_patterns` |

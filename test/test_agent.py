@@ -9,11 +9,11 @@ from core.schemas.expertise import ExpertiseDetection
 class TestBookQdrantAgentInit:
     def test_init_detects_expertise(self):
         mock_qdrant = Mock()
-        mock_qdrant.get_all_by_course.return_value = [
+        mock_qdrant.get_all_by_book.return_value = [
             Document(page_content="Software engineering is...", metadata={"source": "se.pdf"}),
         ]
 
-        with patch("core.utils.llm_config.get_chat_model") as mock_llm:
+        with patch("agents.book_qdrant_agent.get_chat_model") as mock_llm:
             mock_structured = Mock()
             mock_structured.invoke.return_value = ExpertiseDetection(
                 domain="Software Engineering",
@@ -24,31 +24,31 @@ class TestBookQdrantAgentInit:
             mock_llm.return_value.with_structured_output.return_value = mock_structured
 
             from agents.book_qdrant_agent import BookQdrantAgent
-            agent = BookQdrantAgent(qdrant_db=mock_qdrant, course_id="test_course")
-            assert agent.course_id == "test_course"
+            agent = BookQdrantAgent(qdrant_db=mock_qdrant, book_id="test_book")
+            assert agent.book_id == "test_book"
             assert agent.expertise.domain == "Software Engineering"
 
     def test_init_fallback_on_error(self):
         mock_qdrant = Mock()
-        mock_qdrant.get_all_by_course.return_value = []
+        mock_qdrant.get_all_by_book.return_value = []
 
-        with patch("core.utils.llm_config.get_chat_model") as mock_llm:
+        with patch("agents.book_qdrant_agent.get_chat_model") as mock_llm:
             from agents.book_qdrant_agent import BookQdrantAgent
-            agent = BookQdrantAgent(qdrant_db=mock_qdrant, course_id="test_course")
+            agent = BookQdrantAgent(qdrant_db=mock_qdrant, book_id="test_book")
             assert agent.expertise.domain == "Umum"
 
 
 class TestRetrieveContext:
     def test_retrieve_context_deduplicates(self):
         mock_qdrant = Mock()
-        mock_qdrant.get_all_by_course.return_value = []
+        mock_qdrant.get_all_by_book.return_value = []
         mock_qdrant.query.return_value = [
             Document(page_content="Same text", metadata={"source": "a.pdf", "pages": [1]}),
             Document(page_content="Same text", metadata={"source": "a.pdf", "pages": [1]}),
             Document(page_content="Different text", metadata={"source": "b.pdf", "pages": [2]}),
         ]
 
-        with patch("core.utils.llm_config.get_chat_model") as mock_llm:
+        with patch("agents.book_qdrant_agent.get_chat_model") as mock_llm:
             mock_structured = Mock()
             mock_structured.invoke.return_value = ExpertiseDetection(
                 domain="Umum", sub_fields=[], expertise_prompt="tutor", book_type="unknown"
@@ -56,7 +56,7 @@ class TestRetrieveContext:
             mock_llm.return_value.with_structured_output.return_value = mock_structured
 
             from agents.book_qdrant_agent import BookQdrantAgent
-            agent = BookQdrantAgent(qdrant_db=mock_qdrant, course_id="test")
+            agent = BookQdrantAgent(qdrant_db=mock_qdrant, book_id="test")
             context, docs, sources = agent._retrieve_context("query")
 
             assert "Same text" in context
@@ -65,7 +65,7 @@ class TestRetrieveContext:
 
     def test_retrieve_context_formats_metadata(self):
         mock_qdrant = Mock()
-        mock_qdrant.get_all_by_course.return_value = []
+        mock_qdrant.get_all_by_book.return_value = []
         mock_qdrant.query.return_value = [
             Document(
                 page_content="Content here",
@@ -73,7 +73,7 @@ class TestRetrieveContext:
             ),
         ]
 
-        with patch("core.utils.llm_config.get_chat_model") as mock_llm:
+        with patch("agents.book_qdrant_agent.get_chat_model") as mock_llm:
             mock_structured = Mock()
             mock_structured.invoke.return_value = ExpertiseDetection(
                 domain="Umum", sub_fields=[], expertise_prompt="tutor", book_type="unknown"
@@ -81,7 +81,7 @@ class TestRetrieveContext:
             mock_llm.return_value.with_structured_output.return_value = mock_structured
 
             from agents.book_qdrant_agent import BookQdrantAgent
-            agent = BookQdrantAgent(qdrant_db=mock_qdrant, course_id="test")
+            agent = BookQdrantAgent(qdrant_db=mock_qdrant, book_id="test")
             context, docs, sources = agent._retrieve_context("query")
 
             assert "book.pdf" in context
@@ -94,11 +94,11 @@ class TestAskStream:
         from langchain_core.messages import AIMessage
 
         mock_qdrant = Mock()
-        mock_qdrant.get_all_by_course.return_value = [
+        mock_qdrant.get_all_by_book.return_value = [
             Document(page_content="test content", metadata={"source": "test.pdf"}),
         ]
 
-        with patch("core.utils.llm_config.get_chat_model") as mock_llm:
+        with patch("agents.book_qdrant_agent.get_chat_model") as mock_llm:
             mock_structured = Mock()
             mock_structured.invoke.return_value = ExpertiseDetection(
                 domain="Umum", sub_fields=[], expertise_prompt="tutor", book_type="unknown"
@@ -106,7 +106,7 @@ class TestAskStream:
             mock_llm.return_value.with_structured_output.return_value = mock_structured
 
             from agents.book_qdrant_agent import BookQdrantAgent
-            agent = BookQdrantAgent(qdrant_db=mock_qdrant, course_id="test")
+            agent = BookQdrantAgent(qdrant_db=mock_qdrant, book_id="test")
 
             ai_msg = AIMessage(content="Test answer")
             agent.agent = AsyncMock()

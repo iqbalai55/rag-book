@@ -48,7 +48,7 @@ class TestSupabaseStorageMethods:
         with patch("builtins.open", m):
             self.storage.upload_pdf(
                 file_path="/tmp/test.pdf",
-                course_id="course1",
+                book_id="book1",
                 filename="test.pdf",
             )
         self.mock_client.storage.from_.assert_called()
@@ -57,17 +57,17 @@ class TestSupabaseStorageMethods:
         self.mock_client.storage.from_.return_value.get_public_url.return_value = (
             "https://storage.supabase.co/test.pdf"
         )
-        url = self.storage.get_public_url("course1", "test.pdf")
+        url = self.storage.get_public_url("book1", "test.pdf")
         assert "https://storage.supabase.co/test.pdf" in url
 
     def test_delete_pdf_success(self):
         self.mock_client.storage.from_.return_value.remove.return_value = True
-        result = self.storage.delete_pdf("course1", "test.pdf")
+        result = self.storage.delete_pdf("book1", "test.pdf")
         assert result is True
 
     def test_delete_pdf_failure(self):
         self.mock_client.storage.from_.return_value.remove.side_effect = Exception("fail")
-        result = self.storage.delete_pdf("course1", "test.pdf")
+        result = self.storage.delete_pdf("book1", "test.pdf")
         assert result is False
 
     def test_list_pdfs(self):
@@ -75,10 +75,10 @@ class TestSupabaseStorageMethods:
             {"name": "file1.pdf"},
             {"name": "file2.pdf"},
         ]
-        files = self.storage.list_pdfs("course1")
+        files = self.storage.list_pdfs("book1")
         assert len(files) == 2
 
     def test_list_pdfs_error(self):
         self.mock_client.storage.from_.return_value.list.side_effect = Exception("fail")
-        files = self.storage.list_pdfs("course1")
+        files = self.storage.list_pdfs("book1")
         assert files == []

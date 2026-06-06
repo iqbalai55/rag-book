@@ -27,15 +27,15 @@ class MindmapGenerator:
 
     async def generate(
         self,
-        course_id: str,
+        book_id: str,
         user_prompt: Optional[str] = None,
     ) -> dict:
         """Generate mindmap from all book content."""
-        docs = self.qdrant_db.get_all_by_course(course_id)
+        docs = self.qdrant_db.get_all_by_book(book_id)
 
         if not docs:
             raise HTTPException(
-                status_code=404, detail="No content found for this course"
+                status_code=404, detail="No content found for this book"
             )
 
         context = "\n\n".join([d.page_content for d in docs])[:15000]
@@ -44,7 +44,7 @@ class MindmapGenerator:
         user_prompt_section = self._build_user_prompt_section(user_prompt)
         prompt = MINDMAP_FROM_CONTENT_PROMPT.format(
             context=context,
-            topik=course_id,
+            topik=book_id,
             user_prompt_section=user_prompt_section,
         )
 
@@ -74,7 +74,7 @@ class MindmapGenerator:
             )
 
         return {
-            "course_id": course_id,
+            "book_id": book_id,
             "title": result.title,
             "mermaid": result.mermaid,
             "sources": list(all_sources),
@@ -82,7 +82,7 @@ class MindmapGenerator:
 
     async def edit(
         self,
-        course_id: str,
+        book_id: str,
         mermaid: str,
         instruction: str,
     ) -> dict:
@@ -92,28 +92,37 @@ class MindmapGenerator:
             instruction=instruction,
         )
 
+        all_sources: set = set()
         try:
-            llm = self.llm
-            response = llm.invoke(prompt)
-            content = response.content if hasattr(response, "content") else str(response)
+            docs = self.qdrant_db.get_all_by_book(book_id)
+            for doc in (docs or []):
+                source = doc.metadata.get("source", "unknown")
+                pages = doc.metadata.get("pages", [])
+                if pages:
+                    all_sources.add(f"{source} (hal {min(pages)}-{max(pages)})")
+                else:
+                    all_sources.add(source)
+        except Exception as e:
+            logger.warning(f"[mindmap.edit] source lookup failed (non-fatal): {e}")
 
-            # Clean up the response - extract only mermaid syntax
-            content = content.strip()
-            if content.startswith("```mermaid"):
-                content = content[10:]
-            if content.startswith("```"):
-                content = content[3:]
-            if content.endswith("```"):
-                content = content[:-3]
-            content = content.strip()
+        try:
+            structured_llm = self.llm.with_structured_output(MindmapResponse)
+            result = structured_llm.invoke(prompt)
 
-            return {
-                "course_id": course_id,
-                "mermaid": content,
-            }
+            if isinstance(result, str):
+                result = json.loads(result)
+            if isinstance(result, dict):
+                result = MindmapResponse(**result)
 
         except Exception as e:
             logger.error(f"Mindmap edit error: {e}")
             raise HTTPException(
                 status_code=500, detail=f"Failed to edit mindmap: {e}"
             )
+
+        return {
+            "book_id": book_id,
+            "title": result.title,
+            "mermaid": result.mermaid,
+            "sources": list(all_sources),
+        }
