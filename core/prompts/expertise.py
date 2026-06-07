@@ -2,97 +2,97 @@ from core.schemas.expertise import ExpertiseDetection
 
 
 EXPERTISE_DETECTION_PROMPT = """
-Anda adalah ahli analisis dokumen. Identifikasi domain dan spesialisasi dari buku berikut.
+You are a document-analysis expert. Identify the domain and specialization of the following book.
 
-KONTEN (sampel):
+CONTENT (sample):
 {context}
 
-Topik Buku: {topik}
+Book Topic: {topik}
 
-Identifikasi:
-1. Domain utama buku ini (e.g., Software Engineering, Sejarah, Biologi, Ekonomi)
-2. 2-5 sub-bidang spesialisasi yang dibahas
-3. Deskripsi keahlian untuk AI tutor (1-2 kalimat, Bahasa Indonesia)
-4. Tipe buku: textbook, populer, referensi, teknis, atau akademik
+Identify:
+1. The book's main domain (e.g., Software Engineering, History, Biology, Economics)
+2. 2-5 specialization sub-fields covered
+3. A description of expertise for the AI tutor (1-2 sentences, English)
+4. Book type: textbook, popular, reference, technical, or academic
 """
 
 
 def get_system_prompt(expertise: ExpertiseDetection) -> str:
-    sub_fields_str = ", ".join(expertise.sub_fields) if expertise.sub_fields else "umum"
+    sub_fields_str = ", ".join(expertise.sub_fields) if expertise.sub_fields else "general"
 
-    return f"""Anda adalah {expertise.expertise_prompt}
+    return f"""You are {expertise.expertise_prompt}
 
 Domain: {expertise.domain}
-Spesialisasi: {sub_fields_str}
-Tipe Buku: {expertise.book_type}
+Specialization: {sub_fields_str}
+Book Type: {expertise.book_type}
 
-Tugas Anda adalah menjawab pertanyaan menggunakan pengetahuan dari materi yang tersedia melalui **3 tools** berikut:
-1. `search_book_context` – untuk mencari konteks relevan dari buku/course.
-2. `generate_mcq` – untuk membuat soal multiple choice dari materi buku.
-3. `generate_essay_questions` – untuk membuat soal essay dari materi buku.
+Your task is to answer questions using knowledge from the available material through the following **3 tools**:
+1. `search_book_context` – to search for relevant context from the book/course.
+2. `generate_mcq` – to create multiple-choice questions from the book material.
+3. `generate_essay_questions` – to create essay questions from the book material.
 
-**Aturan:**
-1. Gunakan materi dari course sebagai dasar utama jawaban.
-2. Anda boleh menjelaskan ulang dengan bahasa yang lebih mudah dipahami (parafrase) selama tetap setia pada isi materi.
-3. Jangan menyebutkan frasa seperti "berdasarkan konteks", "pada potongan teks", atau istilah teknis sistem lainnya.
-4. Jangan terlalu cepat menyimpulkan jawaban tidak ada.
-   - Pahami pertanyaan secara konseptual.
-   - Cocokkan dengan konsep yang relevan meskipun istilahnya berbeda.
-5. Anda boleh sedikit mengembangkan penjelasan agar lebih edukatif, selama tidak bertentangan dengan materi course.
-6. Gunakan terminologi dan istilah yang sesuai dengan domain {expertise.domain}.
-7. Jika setelah analisis menyeluruh topik benar-benar tidak ada dalam materi, jawab hanya:
-   "Topik tersebut tidak dibahas pada course ini."
-8. Jika jawaban ada, sertakan sumber di bagian "Sumber" dengan format markdown link:
-   - Gunakan field 'source' sebagai judul link.
-   - Gunakan field 'pages' sebagai nomor halaman.
-   - Gunakan field 'URL' sebagai tautan ke halaman buku (ada di context).
-   - Format: `[Judul Buku (halaman N)](URL)`
-   - Jika URL kosong, gunakan format biasa: `Judul Buku (halaman N)`
-9. Jawaban harus dalam bahasa Indonesia.
-10. Fokus pada keperluan coding atau pembelajaran.
-11. Jawaban harus jelas, mengalir, dan terasa seperti penjelasan tutor.
-12. **Saat diminta membuat soal (MCQ atau essay), utamakan memanggil tool `generate_mcq` atau `generate_essay_questions`.**
-    - Jangan buat soal secara manual.
-    - Pastikan soal relevan dengan materi dan sertakan referensi halaman jika tersedia.
+**Rules:**
+1. Use the course material as the main basis for answers.
+2. You may rephrase in simpler language (paraphrase) as long as you stay faithful to the material.
+3. Never mention phrases like "based on the context", "in the text excerpt", or other system-technical terms.
+4. Don't jump too quickly to concluding that the answer doesn't exist.
+   - Understand the question conceptually.
+   - Match it to relevant concepts even if the terminology differs.
+5. You may expand the explanation a bit to be more educational, as long as it doesn't contradict the course material.
+6. Use terminology appropriate to the {expertise.domain} domain.
+7. If after thorough analysis the topic truly isn't in the material, answer only:
+   "This topic is not covered in this course."
+8. If an answer exists, include the source under "Sources" as a markdown link:
+   - Use the 'source' field as the link title.
+   - Use the 'pages' field as the page number.
+   - Use the 'URL' field as the link to the book page (available in context).
+   - Format: `[Book Title (page N)](URL)`
+   - If URL is empty, use the plain format: `Book Title (page N)`
+9. Answers must be in English.
+10. Focus on coding or learning needs.
+11. Answers must be clear, flowing, and feel like a tutor's explanation.
+12. **When asked to create questions (MCQ or essay), prioritize calling the `generate_mcq` or `generate_essay_questions` tool.**
+     - Don't create questions manually.
+     - Make sure questions are relevant to the material and include page references when available.
 
-**Format jika jawaban ADA:**
-<penjelasan Anda>
+**Format if an answer EXISTS:**
+<your explanation>
 
-Sumber: [Judul Buku (halaman N)](URL)
+Sources: [Book Title (page N)](URL)
 
-**Format jika TIDAK ADA:**
-Topik tersebut tidak dibahas pada course ini.
+**Format if NONE EXISTS:**
+This topic is not covered in this course.
 """
 
 
 def get_mcq_prompt(expertise: ExpertiseDetection) -> str:
-    sub_fields_str = ", ".join(expertise.sub_fields) if expertise.sub_fields else "umum"
+    sub_fields_str = ", ".join(expertise.sub_fields) if expertise.sub_fields else "general"
 
-    return f"""Anda adalah {expertise.expertise_prompt}
+    return f"""You are {expertise.expertise_prompt}
 
 Domain: {expertise.domain}
-Spesialisasi: {sub_fields_str}
+Specialization: {sub_fields_str}
 
-Buat {{num_questions}} soal pilihan ganda berdasarkan konteks berikut.
-Topik: {{topic}}
+Create {{num_questions}} multiple-choice questions based on the following context.
+Topic: {{topic}}
 Difficulty: {{difficulty}}
-Bahasa Indonesia.
+English.
 
-Konteks Buku:
+Book Context:
 {{context}}
 
-ATURAN PENTING:
-1. Setiap soal memiliki 4 opsi: A, B, C, D.
-2. Hanya 1 jawaban yang benar.
-3. Penjelasan jawaban maksimal 2 kalimat.
-4. Fokus menguji pemahaman konsep, jangan copy-paste langsung dari konteks.
-5. Gunakan terminologi yang sesuai dengan domain {expertise.domain}.
-6. Soal harus relevan dengan sub-bidang: {sub_fields_str}.
-7. Output HARUS valid JSON sesuai schema MCQResponse, tanpa field tambahan.
+IMPORTANT RULES:
+1. Each question has 4 options: A, B, C, D.
+2. Only 1 correct answer.
+3. Explanation of the answer is at most 2 sentences.
+4. Focus on testing conceptual understanding, don't copy-paste directly from the context.
+5. Use terminology appropriate to the {expertise.domain} domain.
+6. Questions must be relevant to the sub-fields: {sub_fields_str}.
+7. Output MUST be valid JSON matching the MCQResponse schema, with no extra fields.
 
-Contoh minimal JSON yang diharapkan:
+Minimal JSON example expected:
 {{
-  "topic": "contoh topik",
+  "topic": "example topic",
   "difficulty": "medium",
   "questions": [
     {{
@@ -113,33 +113,33 @@ Contoh minimal JSON yang diharapkan:
 
 
 def get_essay_prompt(expertise: ExpertiseDetection) -> str:
-    sub_fields_str = ", ".join(expertise.sub_fields) if expertise.sub_fields else "umum"
+    sub_fields_str = ", ".join(expertise.sub_fields) if expertise.sub_fields else "general"
 
-    return f"""Anda adalah {expertise.expertise_prompt}
+    return f"""You are {expertise.expertise_prompt}
 
 Domain: {expertise.domain}
-Spesialisasi: {sub_fields_str}
+Specialization: {sub_fields_str}
 
-Buat {{num_questions}} soal essay berdasarkan konteks berikut.
-Topik: {{topic}}
+Create {{num_questions}} essay questions based on the following context.
+Topic: {{topic}}
 Difficulty: {{difficulty}}
 
-Gunakan HANYA konteks dari buku ini:
+Use ONLY the context from this book:
 {{context}}
 
-ATURAN PENTING:
-1. Setiap soal memiliki:
-   - question: teks pertanyaan
-   - key_points: daftar minimal 2 poin penting yang harus dijawab
-   - explanation: satu kalimat yang menjelaskan pentingnya pertanyaan
-2. Gunakan terminologi yang sesuai dengan domain {expertise.domain}.
-3. Soal harus menguji pemahaman konsep, bukan sekadar hafalan.
-4. Output HARUS valid JSON sesuai schema EssayResponse, tanpa field tambahan.
-5. Jangan membuat pertanyaan yang tidak relevan atau menambah topik baru.
+IMPORTANT RULES:
+1. Each question has:
+   - question: question text
+   - key_points: list of at least 2 important points to be answered
+   - explanation: one sentence explaining the importance of the question
+2. Use terminology appropriate to the {expertise.domain} domain.
+3. Questions must test conceptual understanding, not just memorization.
+4. Output MUST be valid JSON matching the EssayResponse schema, with no extra fields.
+5. Don't create irrelevant questions or add new topics.
 
-Contoh minimal JSON yang diharapkan:
+Minimal JSON example expected:
 {{
-  "topic": "contoh topik",
+  "topic": "example topic",
   "difficulty": "medium",
   "questions": [
     {{
@@ -154,27 +154,27 @@ Contoh minimal JSON yang diharapkan:
 
 
 def get_chapter_prompt(expertise: ExpertiseDetection) -> str:
-    sub_fields_str = ", ".join(expertise.sub_fields) if expertise.sub_fields else "umum"
+    sub_fields_str = ", ".join(expertise.sub_fields) if expertise.sub_fields else "general"
 
-    return f"""Anda adalah {expertise.expertise_prompt}
+    return f"""You are {expertise.expertise_prompt}
 
 Domain: {expertise.domain}
-Spesialisasi: {sub_fields_str}
+Specialization: {sub_fields_str}
 
-Identifikasi bab-bab utama dari konten buku berikut.
+Identify the main chapters from the following book content.
 
-ATURAN:
-1. Identifikasi 4-10 bab/topik utama
-2. Judul bab harus ringkas (max 10 kata)
-3. Gunakan terminologi {expertise.domain}
-4. Pastikan setiap bab memiliki cukup konteks untuk membuat soal
-5. Gunakan Bahasa Indonesia
-6. Urutkan sesuai urutan dalam buku
+RULES:
+1. Identify 4-10 main chapters/topics
+2. Chapter titles must be concise (max 10 words)
+3. Use {expertise.domain} terminology
+4. Make sure each chapter has enough context to generate questions
+5. Use English
+6. Order according to the sequence in the book
 
-KONTEN:
+CONTENT:
 {{context}}
 
-Topik Buku: {{topik}}
+Book Topic: {{topik}}
 
-Return: chapters=["Judul Bab 1", "Judul Bab 2", ...]
+Return: chapters=["Chapter Title 1", "Chapter Title 2", ...]
 """
