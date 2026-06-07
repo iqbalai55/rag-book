@@ -5,6 +5,7 @@ from langchain_core.documents import Document
 from langchain_qdrant import QdrantVectorStore
 
 from qdrant_client import QdrantClient
+from qdrant_client.http import models as qmodels
 from qdrant_client.http.models import (
     Distance,
     VectorParams,
@@ -12,6 +13,7 @@ from qdrant_client.http.models import (
     FieldCondition,
     MatchValue,
 )
+from qdrant_client.http.exceptions import UnexpectedResponse
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +47,14 @@ class QdrantDB:
                 collection_name=collection_name,
                 vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
             )
-
-            # ✅ Create payload index for multitenancy
-            self._create_payload_indexes()
-
         else:
             logger.info(f"Collection '{collection_name}' already exists.")
+
+        # ✅ Idempotent: ensures `metadata.book_id` filter index exists on
+        # every init, so collections created by older versions (or imported
+        # from a backup) get the index created on first use. Prevents
+        # 400 "Index required but not found" on `metadata.book_id`.
+        self._ensure_payload_indexes()
 
         self.vectorstore = QdrantVectorStore(
             client=self.client,
@@ -78,16 +82,45 @@ class QdrantDB:
         except Exception:
             return False
 
-    def _create_payload_indexes(self):
-        """Create indexes for fast filtering."""
+    def _index_exists(self, field_name: str) -> bool:
+        """Return True if a payload index already exists for `field_name`."""
+        try:
+            info = self.client.get_collection(self.collection_name)
+            schema = getattr(info, "payload_schema", None) or {}
+            return field_name in schema
+        except Exception as e:
+            logger.warning(f"Could not read payload schema: {e}")
+            return False
+
+    def _ensure_payload_indexes(self):
+        """Create the `metadata.book_id` keyword index if missing.
+
+        Safe to call on every QdrantDB init. Tolerates the "already exists"
+        response from the Qdrant server (HTTP 4xx) so a concurrent caller
+        or an older init cannot break startup.
+        """
+        field_name = "metadata.book_id"
+        if self._index_exists(field_name):
+            return
+
         try:
             self.client.create_payload_index(
                 collection_name=self.collection_name,
-                field_name="metadata.book_id",
-                field_schema="keyword",
+                field_name=field_name,
+                field_schema=qmodels.PayloadSchemaType.KEYWORD,
             )
+            logger.info(
+                f"Created payload index '{field_name}' (keyword) on '{self.collection_name}'"
+            )
+        except UnexpectedResponse as e:
+            if getattr(e, "status_code", None) == 409 or "already exists" in str(e).lower():
+                logger.info(f"Payload index '{field_name}' already exists (race-safe)")
+            else:
+                logger.error(f"Failed to create payload index '{field_name}': {e}")
+                raise
         except Exception as e:
-            logger.warning(f"Payload index creation skipped: {e}")
+            logger.error(f"Failed to create payload index '{field_name}': {e}")
+            raise
 
     # -------------------------
     # CORE METHODS
