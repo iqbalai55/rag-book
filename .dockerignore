@@ -1,0 +1,53 @@
+# VCS
+.git
+.gitignore
+.gitattributes
+.git-rewrite
+.github
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.venv
+.venv-edeploy
+venv
+.mypy_cache
+.ruff_cache
+*.egg-info
+build/
+dist/
+
+# Dev / test / experiment
+test/
+benchmarking/
+mlruns/
+qdrant_storage/
+
+# Local config — NEVER bake secrets
+.env
+.env.*
+!.env.example
+env.example
+
+# Docs and planning
+docs/
+.planning/
+README.md
+AGENTS.md
+CONTEXT.md
+.env.example
+USER_GUIDE.md
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Project agent / skills
+.kilo/
+.agents/
+skills-lock.json

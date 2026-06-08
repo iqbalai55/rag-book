@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1.7
+# CUDA image for Modal deploy. Local dev should use Dockerfile (CPU) instead.
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    PYTHONPATH=/app \
+    HF_HOME=/hf_cache \
+    TRANSFORMERS_CACHE=/hf_cache
+
+WORKDIR /app
+
+# Python 3.11 (CUDA runtime base image has no Python)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3.11 \
+        python3.11-venv \
+        python3.11-dev \
+        python3-pip \
+        libgl1 \
+        libglib2.0-0 \
+        libsm6 \
+        libxext6 \
+        libxrender1 \
+        poppler-utils \
+        ffmpeg \
+        curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python3
+
+# Python deps
+COPY requirements/requirements_main.txt /app/requirements/requirements_main.txt
+RUN pip install --upgrade pip \
+    && pip install -r /app/requirements/requirements_main.txt
+
+# Pre-create HF cache dir; Modal will mount the embedding_cache_volume over this
+RUN mkdir -p /hf_cache && chmod 777 /hf_cache
+
+# App source
+COPY core/ /app/core/
+COPY agents/ /app/agents/
+COPY scripts/ /app/scripts/
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+
+CMD ["uvicorn", "scripts.main_docker:app", "--host", "0.0.0.0", "--port", "8000"]

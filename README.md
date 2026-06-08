@@ -51,7 +51,8 @@ Multi-tenant RAG system for querying book content with source citations. Ask que
 
 - **Deployment**
   - FastAPI for local development
-  - Modal.com for cloud deployment
+  - **Docker** for reproducible builds — separate CPU and CUDA images, same FastAPI app
+  - **Modal.com** for cloud deployment via the Docker image (registry or builder mode)
   - API key security
   - Rate limiter
   - CORS middleware for frontend integration
@@ -64,7 +65,8 @@ Multi-tenant RAG system for querying book content with source citations. Ask que
 - **LangSmith** - Production observability
 - **MLflow** - Benchmarking
 - **FastAPI** - Local API server
-- **Modal.com** - Cloud deployment
+- **Modal.com** - Cloud deployment (Docker-based)
+- **Docker** - Reproducible local + CI builds (CPU + CUDA images)
 - **Chatterbox TTS** - Text-to-speech
 - **Docling** - PDF parsing and chunking
 
@@ -72,9 +74,16 @@ Multi-tenant RAG system for querying book content with source citations. Ask que
 
 ```
 rag-book/
+├── Dockerfile                  # CPU image — local dev & CI
+├── Dockerfile.cuda             # GPU image — Modal deploy (T4)
+├── docs/adr/                   # Architecture decision records
+│   ├── 0001-book-domain-and-reingest.md
+│   └── 0002-docker-modal-deployment.md
 ├── scripts/                   # Entry points
-│   ├── main_fastapi.py        # FastAPI server (local)
-│   ├── main_modal.py          # Modal deployment (cloud)
+│   ├── main_fastapi.py        # FastAPI server (local uvicorn)
+│   ├── main_docker.py         # Plain FastAPI app (no modal) — run by Docker & Modal-via-Docker
+│   ├── main_modal.py          # Modal deployment (legacy, native pip install build)
+│   ├── main_modal_docker.py   # Modal deployment via Dockerfile (registry or builder mode)
 │   ├── main_checkpointer.py   # Postgres checkpointer setup
 │   ├── migrations/            # SQL migrations
 │   ├── run_podcast_agent.py   # Podcast agent CLI
@@ -196,9 +205,39 @@ Server runs on `http://127.0.0.1:8001`
 
 ### Deploy to Modal Cloud
 
+The cloud deploy path is **Docker-based**. `scripts/main_modal_docker.py` wraps the same `scripts/main_docker.py` FastAPI app that `docker run` uses — one app object, two delivery mechanisms.
+
+**Local dev (Modal builds the Dockerfile remotely):**
+
 ```bash
-modal deploy scripts.main_modal
+modal deploy -m scripts.main_modal_docker
 ```
+
+**CI / production (image is pre-built and pushed to a registry):**
+
+```bash
+docker build -f Dockerfile.cuda -t ghcr.io/<you>/rag-book:cuda-$GITHUB_SHA .
+docker push ghcr.io/<you>/rag-book:cuda-$GITHUB_SHA
+IMAGE_TAG=ghcr.io/<you>/rag-book:cuda-$GITHUB_SHA \
+  modal deploy -m scripts.main_modal_docker
+```
+
+The deploy mode is selected by the `IMAGE_TAG` env var: set = registry pull, unset = Modal builds the Dockerfile.
+
+> **Legacy `scripts/main_modal.py`** still works (Modal-native `pip install` build) but hits a cross-drive path bug on Windows hosts where the project and Python install live on different drive letters. The Docker path sidesteps this — see `docs/adr/0002-docker-modal-deployment.md`.
+
+### Run with Docker (any host)
+
+```bash
+# Build the CPU image and run the FastAPI service
+docker build -f Dockerfile -t rag-book:dev .
+docker run --env-file .env -p 8000:8000 rag-book:dev
+
+# Health check
+curl http://localhost:8000/health
+```
+
+The CPU image is for local repro and CI; Modal uses `Dockerfile.cuda` (T4 GPU) for production. The two images share the same `CMD` and the same `scripts/main_docker.py` entry point.
 
 ### Setup Checkpointer + Token Usage Table
 
