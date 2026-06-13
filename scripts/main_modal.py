@@ -5,6 +5,7 @@ import modal
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Security, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security import APIKeyHeader
+from fastapi.middleware.cors import CORSMiddleware
 import uuid
 
 from core.schemas.chat import ChatPayload
@@ -106,15 +107,9 @@ image = (
         "ffmpeg",             # Video/audio if needed
     ])
     .pip_install_from_requirements(r"requirements\requirements_main.txt")
-    .add_local_python_source("core/schemas")
-    .add_local_python_source("core/utils")
     .add_local_python_source("agents")
-    .add_local_python_source("core/rag")
-    .add_local_python_source("core/storage")
-    .add_local_python_source("core/tts")
-    .add_local_python_source("core/prompts")
-    .add_local_python_source("core/utils")
-    .add_local_python_source("scripts/supabase_checkpointer")
+    .add_local_python_source("core")
+    .add_local_python_source("scripts")
 )
 
 qdrant_volume = modal.Volume.from_name("qdrant_storage_volume")
@@ -149,7 +144,7 @@ async def lifespan(app: FastAPI):
 # ---------------- FASTAPI LIFESPAN ----------------
 @app.function(
     timeout=2*3600,
-    gpu="T4",
+    cpu=2,
     volumes={
         HF_CACHE_PATH: embedding_cache_volume,
     },
@@ -160,6 +155,13 @@ def fastapi_app():
 
     web_app = FastAPI(lifespan=lifespan)
     web_app.state.limiter = limiter
+    web_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     web_app.add_exception_handler(
         RateLimitExceeded,
         lambda request, exc: PlainTextResponse("Rate limit exceeded", status_code=429)

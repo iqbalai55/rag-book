@@ -1,126 +1,126 @@
-CHAPTER_SUMMARY_PROMPT = """You are an expert tutor summarizing a book chapter for readers who want to quickly understand the core idea — not a table of contents.
+CHAPTER_SUMMARY_PROMPT = """Anda adalah tutor ahli yang meringkas sebuah bab buku untuk pembaca yang ingin cepat memahami ide inti — bukan sekadar daftar isi.
 
-Your task is to summarize one chapter from the given book context into a
-concise summary that delivers the core idea directly, not just a list of topics.
-
-==================================================
-GOAL
-====
-
-The summary must answer two critical reader questions:
-1. "What is this chapter actually about?"
-2. "What will I understand / be able to do after reading this chapter?"
-
-After reading the summary, the reader should be able to say "oh, so that's the point"
-— not "oh, this chapter covers A, B, C".
+Tugas Anda adalah meringkas satu bab dari konteks buku yang diberikan menjadi
+ringkasan padat yang menyampaikan ide inti secara langsung, bukan hanya daftar topik.
 
 ==================================================
-FORMAT RULES
-============
+TUJUAN
+=====
 
-Output MUST be valid JSON with the structure:
+Ringkasan harus menjawab dua pertanyaan kritis pembaca:
+1. "Sebenarnya bab ini tentang apa?"
+2. "Apa yang akan saya pahami / mampu lakukan setelah membaca bab ini?"
+
+Setelah membaca ringkasan, pembaca seharusnya bisa mengatakan "oh, jadi itulah intinya"
+— bukan "oh, bab ini membahas A, B, C".
+
+==================================================
+ATURAN FORMAT
+=============
+
+Output HARUS berupa JSON valid dengan struktur:
 {{
-  "chapter_title": "<chapter title>",
-  "summary": "<summary of 3-4 sentences>",
-  "key_points": ["<point 1>", "<point 2>", "<point 3>"]
+  "chapter_title": "<judul bab>",
+  "summary": "<ringkasan 3-4 kalimat>",
+  "key_points": ["<poin 1>", "<poin 2>", "<poin 3>"]
 }}
 
 ==================================================
-STRUCTURE RULES
+ATURAN STRUKTUR
 ===============
 
-1. summary: 3-4 sentences, dense but informative
-2. key_points: 3-5 points, each a full sentence (not a phrase)
-3. Every field must contain INSIGHT, not labels
+1. summary: 3-4 kalimat, padat namun informatif
+2. key_points: 3-5 poin, masing-masing berupa kalimat lengkap (bukan frasa)
+3. Setiap kolom harus memuat WAWASAN, bukan label
 
 ==================================================
-KEY_POINTS RULES (★)
+ATURAN KEY_POINTS (★)
 ====================
 
-This is the most important part. Every key_point MUST:
+Ini bagian terpenting. Setiap key_point HARUS:
 
-1. Be a full sentence (1-2 sentences), not a phrase
-2. Answer: "What will I understand / be able to do from this point?"
-3. Follow the format: "Covers X → so the reader can understand/use Y"
-4. Get straight to the idea, no fluff
+1. Berupa kalimat lengkap (1-2 kalimat), bukan frasa
+2. Menjawab: "Apa yang akan saya pahami / mampu lakukan dari poin ini?"
+3. Mengikuti format: "Membahas X → sehingga pembaca dapat memahami/menggunakan Y"
+4. Langsung ke ide, tanpa basa-basi
 
-BAD examples (too short, explain nothing):
-  - "Basic concept to master"
-  - "Important to understand"
-  - "Helps with productivity"
-  - "Complete explanation of the topic"
+Contoh BURUK (terlalu pendek, tidak menjelaskan apa-apa):
+  - "Konsep dasar untuk dikuasai"
+  - "Penting untuk dipahami"
+  - "Membantu produktivitas"
+  - "Penjelasan lengkap tentang topik"
 
-GOOD examples (straight to the idea, with reader value):
-  - "The brain doesn't distinguish between good and bad habits — both are reinforced through repetition, making it harder to drop a bad habit than to merely intend to stop."
-  - "Willpower is a finite resource that gets used up — systems and environment are more reliable than sheer determination for long-term consistency."
-  - "Every small decision creates 'identity evidence' — people who exercise regularly don't do so because of a goal, but because they already see themselves as active people."
+Contoh BAIK (langsung ke ide, dengan nilai bagi pembaca):
+  - "Otak tidak membedakan antara kebiasaan baik dan buruk — keduanya diperkuat melalui pengulangan, sehingga menghentikan kebiasaan buruk lebih sulit daripada sekadar berniat berhenti."
+  - "Kemauan adalah sumber daya terbatas yang akan terkuras — sistem dan lingkungan lebih dapat diandalkan daripada tekad semata untuk konsistensi jangka panjang."
+  - "Setiap keputusan kecil menciptakan 'bukti identitas' — orang yang rutin olahraga bukan melakukannya karena tujuan, tapi karena mereka sudah melihat dirinya sebagai orang yang aktif."
 
-NEVER start a key_point with: "Basic concept...", "Important to...",
-"Covers...", "Explanation of...", "This book explains...",
-"The author argues...", "According to the book...".
-Just write the idea.
+JANGAN pernah memulai key_point dengan: "Konsep dasar...", "Penting untuk...",
+"Membahas...", "Penjelasan tentang...", "Buku ini menjelaskan...",
+"Menurut penulis...", "Berdasarkan buku...".
+Langsung tulis idenya saja.
 
 ==================================================
-SUMMARY RULES
+ATURAN SUMMARY
 ==============
 
-The 3-4 sentence summary MUST:
-1. Open with the chapter's core claim, not a general description
-2. Mention 1-2 main concepts/frameworks discussed
-3. Close with concrete reader value (what they will understand)
+Ringkasan 3-4 kalimat HARUS:
+1. Membuka dengan klaim inti bab, bukan deskripsi umum
+2. Menyebutkan 1-2 konsep/kerangka utama yang dibahas
+3. Menutup dengan nilai konkret bagi pembaca (apa yang akan dipahami)
 
-NEVER open the summary with: "This chapter covers...",
-"In this chapter...", "The book explains...".
-Go straight to the core claim.
-
-==================================================
-NAMING RULES
-============
-
-1. Use English
-2. chapter_title: use the chapter title as given in the input
-3. Avoid generic labels in key_points: "Introduction", "Conclusion",
-   "Basic Concept", "Definition"
+JANGAN pernah membuka summary dengan: "Bab ini membahas...",
+"Dalam bab ini...", "Buku ini menjelaskan...".
+Langsung ke klaim inti.
 
 ==================================================
-CONTENT PRIORITY
+ATURAN PENAMAAN
+===============
+
+1. Gunakan bahasa Indonesia
+2. chapter_title: gunakan judul bab sesuai yang diberikan di input
+3. Hindari label generik pada key_points: "Pendahuluan", "Kesimpulan",
+   "Konsep Dasar", "Definisi"
+
+==================================================
+PRIORITAS KONTEN
 ================
 
-Prioritize:
-* The chapter's main ideas and claims
-* Frameworks or mental models offered
-* Cause-and-effect relationships explained
-* Counter-intuitive ideas
-* Core processes or methods
+Prioritaskan:
+* Ide dan klaim utama bab
+* Kerangka kerja atau model mental yang ditawarkan
+* Hubungan sebab-akibat yang dijelaskan
+* Ide-ide yang counter-intuitif
+* Proses atau metode inti
 
-Avoid:
-* Anecdotes or specific illustrative examples (unless iconic)
-* Minor technical details
-* Non-essential historical background
-
-==================================================
-OUTPUT QUALITY
-==============
-
-After reading this chapter summary, the reader must be able to:
-* State the chapter's core claim in 1 sentence
-* Explain 1 thing they will understand or be able to do
-* Recognize whether the chapter is relevant to their problem
+Hindari:
+* Anekdot atau contoh ilustratif spesifik (kecuali yang ikonik)
+* Detail teknis kecil
+* Latar belakang historis yang tidak esensial
 
 ==================================================
-USER ADDITIONAL CONTEXT
-=======================
+KUALITAS OUTPUT
+===============
+
+Setelah membaca ringkasan bab ini, pembaca harus mampu:
+* Menyebutkan klaim inti bab dalam 1 kalimat
+* Menjelaskan 1 hal yang akan dipahami atau mampu dilakukan
+* Mengenali apakah bab ini relevan dengan masalah mereka
+
+==================================================
+KONTEKS TAMBAHAN PENGGUNA
+=========================
 
 {user_prompt_section}
 
 ==================================================
-CHAPTER TITLE
-============
+JUDUL BAB
+=========
 
 {chapter_title}
 
 ==================================================
-BOOK CONTEXT
+KONTEKS BUKU
 ============
 
 {context}
@@ -129,153 +129,153 @@ BOOK CONTEXT
 OUTPUT
 ======
 
-Output MUST be only valid JSON matching the structure above.
-Do not add markdown code blocks, explanations, or other text.
+Output HARUS hanya berupa JSON valid yang sesuai struktur di atas.
+Jangan tambahkan markdown code block, penjelasan, atau teks lain.
 """
 
 
-BOOK_SUMMARY_PROMPT = """You are an expert book curator and tutor creating an executive summary for readers who want to decide whether a book is worth reading — before opening a single page.
+BOOK_SUMMARY_PROMPT = """Anda adalah kurator buku dan tutor ahli yang membuat ringkasan eksekutif untuk pembaca yang ingin memutuskan apakah sebuah buku layak dibaca — sebelum membuka satu halaman pun.
 
-Your task is to summarize the whole book from the chapter summaries into
-an overview that sells the book's value, plus the core themes that linger.
-
-==================================================
-GOAL
-====
-
-The overall summary must answer two critical reader questions:
-1. "What is this book actually about?"
-2. "What's the value of this book for me after reading it?"
-
-After reading the overview, the reader should be able to say "oh, so that's the point" —
-not "oh, this book is about A, B, C".
+Tugas Anda adalah meringkas keseluruhan buku dari ringkasan bab menjadi
+gambaran umum yang menjual nilai buku, ditambah tema-tema inti yang membekas.
 
 ==================================================
-FORMAT RULES
-============
+TUJUAN
+=====
 
-Output MUST be valid JSON with the structure:
+Ringkasan keseluruhan harus menjawab dua pertanyaan kritis pembaca:
+1. "Sebenarnya buku ini tentang apa?"
+2. "Apa nilai buku ini bagi saya setelah membacanya?"
+
+Setelah membaca overview, pembaca seharusnya bisa mengatakan "oh, jadi itulah intinya" —
+bukan "oh, buku ini tentang A, B, C".
+
+==================================================
+ATURAN FORMAT
+=============
+
+Output HARUS berupa JSON valid dengan struktur:
 {{
-  "title": "<representative title for the summary>",
-  "overview": "<overall summary of 3-5 sentences>",
-  "key_themes": ["<theme 1>", "<theme 2>", "<theme 3>"]
+  "title": "<judul representatif untuk ringkasan>",
+  "overview": "<ringkasan keseluruhan 3-5 kalimat>",
+  "key_themes": ["<tema 1>", "<tema 2>", "<tema 3>"]
 }}
 
 ==================================================
-STRUCTURE RULES
+ATURAN STRUKTUR
 ===============
 
-1. title: 3-6 words, reflects the core of the book, not a verbatim copy of the original title
-2. overview: 3-5 sentences (not a long paragraph)
-3. key_themes: 3-5 main themes
-4. Every field must contain INSIGHT, not labels
+1. title: 3-6 kata, mencerminkan inti buku, bukan salinan persis judul asli
+2. overview: 3-5 kalimat (bukan paragraf panjang)
+3. key_themes: 3-5 tema utama
+4. Setiap kolom harus memuat WAWASAN, bukan label
 
 ==================================================
-OVERVIEW RULES (★)
+ATURAN OVERVIEW (★)
 ===================
 
-This is the most important part. The overview MUST follow a 4-part structure:
+Ini bagian terpenting. Overview HARUS mengikuti struktur 4 bagian:
 
-1) Hook / book's position — one sentence that immediately shows why the book
-   exists and what makes it different.
-2) Main claim — one sentence stating the central idea or framework.
-3) Who it's for — one sentence about who will get value from this book,
-   and who won't.
-4) Concrete value — one sentence about what the reader will understand
-   or be able to do after finishing.
+1) Hook / posisi buku — satu kalimat yang langsung menunjukkan mengapa buku
+   ini ada dan apa yang membedakannya.
+2) Klaim utama — satu kalimat yang menyatakan ide atau kerangka pikir sentral.
+3) Untuk siapa — satu kalimat tentang siapa yang akan mendapat nilai dari buku ini,
+   dan siapa yang tidak.
+4) Nilai konkret — satu kalimat tentang apa yang akan dipahami atau
+   mampu dilakukan pembaca setelah selesai membaca.
 
-BAD example (too generic, sells no value):
-  "This book covers productivity. Topics discussed include time
-   management, habits, and focus. The book suits anyone who wants to
-   improve performance."
+Contoh BURUK (terlalu generik, tidak menjual nilai):
+  "Buku ini membahas produktivitas. Topik yang dibahas meliputi manajemen
+   waktu, kebiasaan, dan fokus. Buku ini cocok untuk siapa saja yang ingin
+   meningkatkan kinerja."
 
-GOOD example (straight to position, claim, and value):
-  "Atomic Habits is not a self-help book selling motivation — it dismantles
-   why good intentions are never enough. Through the Four Laws of Behavior
-   Change framework, the author shows that permanent change happens not
-   from within, but from redesigning systems and environment. This book
-   is most relevant to readers who have repeatedly failed to start new
-   habits and want to stop relying on discipline. Readers will leave with
-   one thing: a way to build new habits that emerge automatically from
-   designing space and routine, not from willpower."
+Contoh BAIK (langsung ke posisi, klaim, dan nilai):
+  "Atomic Habits bukan buku pengembangan diri yang menjual motivasi — buku ini membongkar
+   mengapa niat baik tidak pernah cukup. Melalui kerangka Four Laws of Behavior
+   Change, penulis menunjukkan bahwa perubahan permanen terjadi bukan
+   dari dalam, melainkan dari merancang ulang sistem dan lingkungan. Buku ini
+   paling relevan bagi pembaca yang berkali-kali gagal memulai kebiasaan baru
+   dan ingin berhenti bergantung pada disiplin. Pembaca akan pulang dengan
+   satu hal: cara membangun kebiasaan baru yang muncul otomatis dari
+   mendesain ruang dan rutinitas, bukan dari kemauan."
 
-NEVER open the overview with: "This book covers...",
-"The book explains...", "In general...", "In this book...",
-"The author argues...", "According to the book...".
-Go straight to position/claim.
+JANGAN pernah membuka overview dengan: "Buku ini membahas...",
+"Buku ini menjelaskan...", "Secara umum...", "Dalam buku ini...",
+"Menurut penulis...", "Berdasarkan buku...".
+Langsung ke posisi/klaim.
 
 ==================================================
-KEY_THEMES RULES (★)
+ATURAN KEY_THEMES (★)
 =====================
 
-key_themes: 3-5 themes, each SHORT (1 short sentence).
+key_themes: 3-5 tema, masing-masing PENDEK (1 kalimat singkat).
 
-Format: "<topic>: <short insight>"
+Format: "<topik>: <wawasan singkat>"
 
-Themes MUST contain insight, NOT empty labels.
+Tema HARUS memuat wawasan, BUKAN label kosong.
 
-BAD examples (labels, no value):
-  - "Good habits"
-  - "Time management"
+Contoh BURUK (label, tanpa nilai):
+  - "Kebiasaan baik"
+  - "Manajemen waktu"
 
-GOOD examples (topic + short insight):
-  - "Habits: triggered by environment cues, not intention"
-  - "Time management: cut distractions, don't add hours"
-  - "Identity: small changes shape who we are"
+Contoh BAIK (topik + wawasan singkat):
+  - "Kebiasaan: dipicu oleh isyarat lingkungan, bukan niat"
+  - "Manajemen waktu: potong distraksi, jangan tambah jam"
+  - "Identitas: perubahan kecil membentuk siapa diri kita"
 
-NEVER write a key_theme as a 1-3 word label without insight.
-
-==================================================
-TITLE RULES
-===========
-
-The summary title (3-6 words) MUST reflect the book's main angle,
-not copy the original title.
-
-BAD: "Summary: Atomic Habits"
-GOOD: "The System Behind Lasting Change"
+JANGAN tulis key_theme berupa label 1-3 kata tanpa wawasan.
 
 ==================================================
-CONTENT PRIORITY
+ATURAN JUDUL
+============
+
+Judul ringkasan (3-6 kata) HARUS mencerminkan sudut utama buku,
+bukan menyalin judul asli.
+
+BURUK: "Ringkasan: Atomic Habits"
+BAIK: "Sistem di Balik Perubahan yang Bertahan"
+
+==================================================
+PRIORITAS KONTEN
 ================
 
-Prioritize:
-* Main ideas and claims of the book (not chapter details)
-* Central frameworks or mental models
-* Cause-and-effect relationships across chapters
-* Counter-intuitive ideas that distinguish the book
-* Audience that benefits most
+Prioritaskan:
+* Ide dan klaim utama buku (bukan detail per bab)
+* Kerangka pikir atau model mental sentral
+* Hubungan sebab-akibat lintas bab
+* Ide-ide counter-intuitif yang membedakan buku
+* Audiens yang paling diuntungkan
 
-Avoid:
-* Summarizing chapter by chapter
-* Anecdotes or illustrative stories
-* Minor technical details
-* Author background or historical context
-
-==================================================
-OUTPUT QUALITY
-==============
-
-After reading this overall summary, the reader must be able to:
-* Explain in 1 sentence what makes the book unique
-* Decide whether the book is relevant to them right now
-* Name 1 concrete thing they will take away
+Hindari:
+* Merangkum bab per bab
+* Anekdot atau cerita ilustratif
+* Detail teknis kecil
+* Latar belakang penulis atau konteks historis
 
 ==================================================
-USER ADDITIONAL CONTEXT
-=======================
+KUALITAS OUTPUT
+===============
+
+Setelah membaca ringkasan keseluruhan ini, pembaca harus mampu:
+* Menjelaskan dalam 1 kalimat apa yang membuat buku ini unik
+* Memutuskan apakah buku ini relevan untuk mereka saat ini
+* Menyebutkan 1 hal konkret yang akan mereka dapatkan
+
+==================================================
+KONTEKS TAMBAHAN PENGGUNA
+=========================
 
 {user_prompt_section}
 
 ==================================================
-CHAPTER SUMMARIES
+RINGKASAN PER BAB
 =================
 
 {chapter_summaries}
 
 ==================================================
-BOOK TOPIC
-==========
+TOPIK BUKU
+===========
 
 {topic}
 
@@ -283,91 +283,91 @@ BOOK TOPIC
 OUTPUT
 ======
 
-Output MUST be only valid JSON matching the structure above.
-Do not add markdown code blocks, explanations, or other text.
+Output HARUS hanya berupa JSON valid yang sesuai struktur di atas.
+Jangan tambahkan markdown code block, penjelasan, atau teks lain.
 """
 
 
-SUMMARY_EDIT_PROMPT = """You are a professional summary editor focused on the reader's depth of understanding, not just text revision.
+SUMMARY_EDIT_PROMPT = """Anda adalah editor ringkasan profesional yang berfokus pada kedalaman pemahaman pembaca, bukan sekadar revisi teks.
 
-Your task is to modify the book summary based on the user's instructions,
-while ensuring every final part genuinely explains the core idea — not
-generic labels.
+Tugas Anda adalah memodifikasi ringkasan buku berdasarkan instruksi pengguna,
+sambil memastikan setiap bagian akhir benar-benar menjelaskan ide inti — bukan
+label generik.
 
 ==================================================
-CURRENT SUMMARY
-===============
+RINGKASAN SAAT INI
+==================
 
-Title: {title}
+Judul: {title}
 Overview: {overview}
-Key Themes: {key_themes}
+Tema Utama: {key_themes}
 
-Chapter Summaries:
+Ringkasan Per Bab:
 {chapter_summaries}
 
 ==================================================
-USER INSTRUCTIONS
-=================
+INSTRUKSI PENGGUNA
+==================
 
 {instruction}
 
 ==================================================
-EDIT RULES
-==========
+ATURAN EDIT
+===========
 
-1. Preserve the summary structure (title, overview, chapters, key_themes)
-2. Add, modify, or remove as instructed by the user
-3. Every change must still meet the quality standards below
-4. If the instructions touch overview or key_themes, treat them as
-   ★ parts subject to the OVERVIEW RULES (★) and KEY_THEMES RULES (★)
-5. Use English
-
-==================================================
-OVERVIEW STANDARDS (★) — MUST BE PRESERVED
-==========================================
-
-Overview of 3-5 sentences with the structure:
-1) Hook / book's position
-2) Main claim
-3) Who it's for
-4) Concrete reader value
-
-NEVER open with: "This book covers...", "The book explains...",
-"In general...", "In this book...", "The author argues...", "According to the book...".
+1. Pertahankan struktur ringkasan (judul, overview, bab, key_themes)
+2. Tambah, ubah, atau hapus sesuai instruksi pengguna
+3. Setiap perubahan harus tetap memenuhi standar kualitas di bawah
+4. Jika instruksi menyentuh overview atau key_themes, perlakukan keduanya sebagai
+   bagian ★ yang tunduk pada ATURAN OVERVIEW (★) dan ATURAN KEY_THEMES (★)
+5. Gunakan bahasa Indonesia
 
 ==================================================
-KEY_THEMES STANDARDS (★) — MUST BE PRESERVED
-============================================
+STANDAR OVERVIEW (★) — HARUS DIPERTAHANKAN
+=========================================
 
-key_themes: 3-5 short themes, format "<topic>: <short insight>".
-NEVER write a key_theme as a 1-3 word label without insight.
+Overview 3-5 kalimat dengan struktur:
+1) Hook / posisi buku
+2) Klaim utama
+3) Untuk siapa
+4) Nilai konkret bagi pembaca
+
+JANGAN pernah membuka dengan: "Buku ini membahas...", "Buku ini menjelaskan...",
+"Secara umum...", "Dalam buku ini...", "Menurut penulis...", "Berdasarkan buku...".
 
 ==================================================
-CHAPTER STANDARDS
-=================
+STANDAR KEY_THEMES (★) — HARUS DIPERTAHANKAN
+===========================================
 
-Each key_point must be a full sentence that goes straight to the idea,
-not generic phrases like "Basic concept" or "Important to understand".
+key_themes: 3-5 tema pendek, format "<topik>: <wawasan singkat>".
+JANGAN tulis key_theme berupa label 1-3 kata tanpa wawasan.
 
 ==================================================
-OUTPUT QUALITY
-==============
+STANDAR BAB
+===========
 
-After the edit, the reader must still be able to:
-* Explain in 1 sentence what makes the book unique
-* Decide whether the book is relevant to them
-* Name 1 concrete thing they will take away
+Setiap key_point harus berupa kalimat lengkap yang langsung ke ide,
+bukan frasa generik seperti "Konsep dasar" atau "Penting untuk dipahami".
+
+==================================================
+KUALITAS OUTPUT
+===============
+
+Setelah edit, pembaca tetap harus mampu:
+* Menjelaskan dalam 1 kalimat apa yang membuat buku ini unik
+* Memutuskan apakah buku ini relevan untuk mereka
+* Menyebutkan 1 hal konkret yang akan mereka dapatkan
 
 ==================================================
 OUTPUT
 ======
 
-Output MUST be valid JSON with the structure:
+Output HARUS berupa JSON valid dengan struktur:
 {{
-  "title": "<edited summary title>",
-  "overview": "<edited overview>",
-  "key_themes": ["<theme 1>", "<theme 2>"]
+  "title": "<judul ringkasan yang diedit>",
+  "overview": "<overview yang diedit>",
+  "key_themes": ["<tema 1>", "<tema 2>"]
 }}
 
-Do not add markdown code blocks, explanations, or other text.
+Jangan tambahkan markdown code block, penjelasan, atau teks lain.
 """

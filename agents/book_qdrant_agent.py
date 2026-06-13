@@ -230,7 +230,7 @@ class BookQdrantAgent:
                     model=self.llm,
                     max_tokens_before_summary=6000,
                     messages_to_keep=40,
-                    summary_prompt="Summarize previous context briefly.",
+                    summary_prompt="Ringkas konteks sebelumnya secara singkat.",
                 ),
                 ToolCallLimitMiddleware(
                     tool_name="search_book_context",

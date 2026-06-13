@@ -71,22 +71,22 @@ def llm_detect_toc(text: str, llm) -> bool:
 
     structured_llm = llm.with_structured_output(TOCDetection)
 
-    prompt = """Analyze if this page is a Table of Contents (TOC).
+    prompt = """Analisis apakah halaman ini merupakan Daftar Isi (TOC).
 
-POSITIVE SIGNS:
-- Words like "Contents", "Table of Contents", "Chapter", "Section"
-- Topics followed by page numbers (Roman numerals or integers)
-- Hierarchical numbering (1.1, 2.3.4)
-- Fix OCR spacing errors (e.g., 'Co m ple x ity' -> 'Complexity')
+TANDA POSITIF:
+- Kata-kata seperti "Daftar Isi", "Table of Contents", "Bab", "Bagian"
+- Topik diikuti nomor halaman (angka Romawi atau bilangan bulat)
+- Penomoran hierarkis (1.1, 2.3.4)
+- Perbaiki kesalahan spasi OCR (contoh: 'Co m ple x ity' -> 'Complexity')
 
-NEGATIVE SIGNS:
-- Copyright pages, acknowledgments, prefaces without chapter lists
-- Random titles without page mappings
+TANDA NEGATIF:
+- Halaman hak cipta, ucapan terima kasih, kata pengantar tanpa daftar bab
+- Judul acak tanpa pemetaan halaman
 
-TEXT:
+TEKS:
 {text}
 
-Answer: is_toc=True or is_toc=False""".format(
+Jawab: is_toc=True atau is_toc=False""".format(
         text=text[:3000]
     )
 
@@ -130,16 +130,16 @@ def extract_toc_content(pages: List[str], llm, toc_indices: List[int]) -> str:
 
     structured_llm = llm.with_structured_output(TOCContent)
 
-    prompt = """Clean and format this Table of Contents:
-1. Fix OCR spacing errors
-2. Maintain hierarchy (Chapter -> Section)
-3. Preserve page numbers
-4. Return cleaned text
+    prompt = """Bersihkan dan format Daftar Isi berikut:
+1. Perbaiki kesalahan spasi OCR
+2. Pertahankan hierarki (Bab -> Bagian)
+3. Pertahankan nomor halaman
+4. Kembalikan teks yang sudah dibersihkan
 
-RAW TOC:
+TOC MENTAH:
 {text}
 
-Return: toc_text=<cleaned text>""".format(
+Kembalikan: toc_text=<teks yang sudah dibersihkan>""".format(
         text=toc_raw[:5000]
     )
 
@@ -154,12 +154,12 @@ def parse_toc_to_chapters(toc_text: str, llm) -> List[TOCChapter]:
 
     structured_llm = llm.with_structured_output(TOCContent)
 
-    prompt = """Parse this Table of Contents into structured chapters.
+    prompt = """Parse Daftar Isi berikut menjadi bab-bab terstruktur.
 
-TOC TEXT:
+TEKS TOC:
 {text}
 
-Return chapters with: number, title, page, subsections""".format(
+Kembalikan bab dengan: number, title, page, subsections""".format(
         text=toc_text[:5000]
     )
 
@@ -176,7 +176,7 @@ def detect_page_index(toc_text: str, llm) -> bool:
 
     structured_llm = llm.with_structured_output(PageIndexDetection)
 
-    prompt = "Does this TOC contain page numbers?\n\n{text}".format(
+    prompt = "Apakah TOC ini memuat nomor halaman?\n\n{text}".format(
         text=toc_text[:2000]
     )
     result = _invoke_with_retry(structured_llm, prompt)
