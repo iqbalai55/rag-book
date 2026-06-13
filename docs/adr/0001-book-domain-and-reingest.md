@@ -53,8 +53,8 @@ The locked decisions:
 - L4 (rejected): external lock (Postgres advisory / Redis) — overkill until horizontal scale.
 
 **Failure handling**
-- F1 (chosen): empty state, frontend retries — no new state, simple.
-- F2 (rejected): persist a `books` status table — external dependency for a problem that retry solves.
+- F1 (chosen for the re-ingest cascade): empty state, frontend retries — no new state, simple. The cascade is delete → ingest; if either fails, the book is briefly empty in both stores and the frontend retries the full sequence.
+- F2 (rejected for the re-ingest cascade, **later accepted for the first-time ingest path** — see [ADR-0003](./0003-async-ingest.md)): persist a `books` status table — the original rejection held for the cascade but the first-time ingest path is now async and writes its lifecycle onto `ingested_books.status` instead of a new table.
 - F3 (rejected): sentinel point in Qdrant — pollutes the collection with non-content points.
 - F4 (rejected): two-phase commit with quarantine — too heavy for M-Empty (no production data).
 
@@ -62,6 +62,6 @@ The locked decisions:
 
 - **Single-PDF invariant is now load-bearing.** Any future feature that wants multi-PDF per book must revisit this ADR; the storage path, the delete endpoint, and the lock all assume M1.
 - **Frontend owns the cascade.** The frontend must call delete → ingest in sequence, handle 5xx from ingest by showing a retry button, and accept that the book may be briefly empty.
-- **Lock is in-process.** If/when the service is scaled horizontally, the L2 lock no longer prevents races across replicas. L4 (external lock) will be needed; flag it in `docs/adr/` when that happens.
+- **Lock is in-process.** If/when the service is scaled horizontally, the L2 lock no longer prevents races across replicas. (Superseded for the ingest path by [ADR-0003](./0003-async-ingest.md) §"Concurrency" — skip-locked is the cross-replica guarantee; L2 is now a same-replica safety net.)
 - **Rename is atomic.** With no production data (M-Empty), the rename ships in one PR. There is no backfill script. The Qdrant collection is recreated on first ingest under the new name (`metadata.book_id`).
 - **Public API breaks.** All current callers sending `course_id` will start receiving 422s. Coordinate with frontend before deploying.

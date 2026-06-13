@@ -13,6 +13,13 @@ from unittest.mock import Mock, MagicMock
 # Add project root to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+# Load .env so SUPABASE_DB_URL / QDRANT_* etc. are available in tests
+try:
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env")))
+except Exception:
+    pass
+
 
 @pytest.fixture(scope="session")
 def project_root() -> Path:

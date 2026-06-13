@@ -65,17 +65,34 @@ class SupabaseStorage:
         if filename is None:
             filename = os.path.basename(file_path)
 
-        storage_path = f"{book_id}/{filename}"
-
         with open(file_path, "rb") as f:
             file_bytes = f.read()
 
+        return self.upload_pdf_bytes(
+            book_id=book_id,
+            filename=filename,
+            file_bytes=file_bytes,
+        )
+
+    def upload_pdf_bytes(
+        self,
+        book_id: str,
+        filename: str,
+        file_bytes: bytes,
+    ) -> str:
+        """
+        Upload PDF bytes to Supabase Storage at `{book_id}/{filename}` with
+        upsert. Returns the public URL.
+
+        Used by the async-ingest enqueue path so the HTTP handler can stream
+        the upload directly to Supabase without a local temp file.
+        """
+        storage_path = f"{book_id}/{filename}"
         self.client.storage.from_(self.bucket_name).upload(
             path=storage_path,
             file=file_bytes,
             file_options={"content-type": "application/pdf", "upsert": "true"},
         )
-
         public_url = self.get_public_url(book_id, filename)
         logger.info(f"Uploaded PDF: {storage_path} -> {public_url}")
         return public_url

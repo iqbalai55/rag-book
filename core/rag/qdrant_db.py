@@ -292,6 +292,23 @@ class QdrantDB:
         )
         logger.info(f"Deleted all documents for book '{book_id}'")
 
+    def count_by_book(self, book_id: str) -> int:
+        """Return the number of points in this collection whose payload
+        `metadata.book_id` matches. Uses `count` so it does not materialise
+        the chunks. Used by the async-ingest worker to report `chunks_count`."""
+        result = self.client.count(
+            collection_name=self.collection_name,
+            count_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="metadata.book_id",
+                        match=MatchValue(value=book_id),
+                    )
+                ]
+            ),
+        )
+        return int(getattr(result, "count", 0) or 0)
+
     # -------------------------
     # COLLECTION MANAGEMENT
     # -------------------------
